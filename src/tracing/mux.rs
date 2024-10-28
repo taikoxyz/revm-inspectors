@@ -260,6 +260,7 @@ impl DelegatingInspector {
 
                 Ok(DelegatingInspector::Mux(MuxInspector::try_from_config(config)?))
             }
+            GethDebugBuiltInTracerType::FlatCallTracer => todo!(),
         };
 
         inspector.map(|inspector| (tracer_type, inspector))
