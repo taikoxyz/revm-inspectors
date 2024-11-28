@@ -342,7 +342,7 @@ impl TracingInspector {
         result: &InterpreterResult,
         created_address: Option<Address>,
     ) {
-        let InterpreterResult { result, ref output, ref gas } = *result;
+        let InterpreterResult { result, ref output, ref gas , call_options: _} = *result;
 
         let trace_idx = self.pop_trace_idx();
         let trace = &mut self.traces.arena[trace_idx].trace;
