@@ -19,7 +19,7 @@ use revm::{
         InstructionResult, Interpreter, InterpreterResult,
     },
     primitives::{Env, ExecutionResult, Output, ResultAndState, TransactTo},
-    ContextPrecompiles, EvmContext, Inspector, SyncDatabase, SyncDatabaseRef,
+    ContextPrecompiles, EvmContext, Inspector, SyncDatabase, DatabaseRef, SyncDatabaseRef,
 };
 
 pub(crate) mod bindings;

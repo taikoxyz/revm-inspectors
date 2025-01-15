@@ -22,7 +22,7 @@ use revm::{
         OpCode, SharedMemory, Stack,
     },
     primitives::{AccountInfo, Bytecode, EvmState, KECCAK_EMPTY},
-    SyncDatabaseRef,
+    DatabaseRef, SyncDatabaseRef,
 };
 use std::{cell::RefCell, rc::Rc};
 
