@@ -1,7 +1,7 @@
 [package]
 name = "revm-inspectors"
 description = "Revm inspector implementations"
-version = "0.6.0"
+version = "0.11.0"
 edition = "2021"
 rust-version = "1.79.0"
 license = "MIT OR Apache-2.0"
@@ -30,12 +30,11 @@ clippy.lint_groups_priority = "allow"
 
 [dependencies]
 # eth
-alloy-rpc-types-eth = "0.3"
-alloy-rpc-types-trace = "0.3"
+alloy-rpc-types-eth = "0.6"
+alloy-rpc-types-trace = "0.6"
 alloy-sol-types = "0.8"
-alloy-primitives = "0.8"
-# revm = { version = "14", default-features = false, features = ["std"] }
-revm = { git = "https://github.com/taikoxyz/revm.git", branch = "changeset", default-features = false, features = ["std"] }
+alloy-primitives = { version = "0.8", features = ["map"] }
+revm = { git = "https://github.com/taikoxyz/revm.git", branch = "v50-gwyneth", default-features = false, features = ["std"] }
 
 anstyle = "1.0"
 colorchoice = "1.0"
@@ -50,7 +49,7 @@ boa_engine = { version = "0.19", optional = true }
 boa_gc = { version = "0.19", optional = true }
 
 [dev-dependencies]
-snapbox = "0.6"
+snapbox = { version = "0.6", features = ["term-svg"] }
 
 [features]
 serde = ["dep:serde", "revm/serde"]

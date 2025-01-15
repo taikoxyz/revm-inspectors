@@ -1,8 +1,6 @@
-use crate::{
-    chain_address,
-    tracing::{FourByteInspector, TracingInspector, TracingInspectorConfig},
-};
-use alloy_primitives::{Address, Log, U256};
+use crate::chain_address;
+use crate::tracing::{FourByteInspector, TracingInspector, TracingInspectorConfig};
+use alloy_primitives::{map::HashMap, Address, Log, U256};
 use alloy_rpc_types_trace::geth::{
     mux::{MuxConfig, MuxFrame},
     CallConfig, FourByteFrame, GethDebugBuiltInTracerType, GethDebugTracerConfig, GethTrace,
@@ -15,7 +13,6 @@ use revm::{
     primitives::{ChainAddress, ResultAndState},
     EvmContext, Inspector, SyncDatabase, SyncDatabaseRef,
 };
-use std::collections::HashMap;
 use thiserror::Error;
 
 /// Mux tracing inspector that runs and collects results of multiple inspectors at once.
@@ -44,7 +41,7 @@ impl MuxInspector {
         result: &ResultAndState,
         db: &DB,
     ) -> Result<MuxFrame, DB::Error> {
-        let mut frame = HashMap::with_capacity(self.0.len());
+        let mut frame = HashMap::with_capacity_and_hasher(self.0.len(), Default::default());
         for (tracer_type, inspector) in &self.0 {
             let trace = match inspector {
                 DelegatingInspector::FourByte(inspector) => FourByteFrame::from(inspector).into(),
@@ -222,9 +219,8 @@ impl DelegatingInspector {
                 Ok(DelegatingInspector::FourByte(FourByteInspector::default()))
             }
             GethDebugBuiltInTracerType::CallTracer => {
-                let call_config = tracer_config
-                    .ok_or_else(|| Error::MissingConfig(tracer_type))?
-                    .into_call_config()?;
+                let call_config =
+                    tracer_config.ok_or(Error::MissingConfig(tracer_type))?.into_call_config()?;
 
                 let inspector = TracingInspector::new(
                     TracingInspectorConfig::from_geth_call_config(&call_config),
@@ -238,7 +234,7 @@ impl DelegatingInspector {
             // }
             GethDebugBuiltInTracerType::PreStateTracer => {
                 let prestate_config = tracer_config
-                    .ok_or_else(|| Error::MissingConfig(tracer_type))?
+                    .ok_or(Error::MissingConfig(tracer_type))?
                     .into_pre_state_config()?;
 
                 let inspector = TracingInspector::new(
@@ -254,9 +250,8 @@ impl DelegatingInspector {
                 Ok(DelegatingInspector::Noop)
             }
             GethDebugBuiltInTracerType::MuxTracer => {
-                let config = tracer_config
-                    .ok_or_else(|| Error::MissingConfig(tracer_type))?
-                    .into_mux_config()?;
+                let config =
+                    tracer_config.ok_or(Error::MissingConfig(tracer_type))?.into_mux_config()?;
 
                 Ok(DelegatingInspector::Mux(MuxInspector::try_from_config(config)?))
             }
