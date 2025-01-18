@@ -4,7 +4,8 @@ use revm::{
     interpreter::{
         CallInputs, CallOutcome, CreateInputs, CreateOutcome, CreateScheme, EOFCreateKind,
     },
-    Database, EvmContext, Inspector, JournaledState,
+    primitives::ChainAddress,
+    EvmContext, Inspector, JournaledState, SyncDatabase,
 };
 
 /// Sender of ETH transfer log per `eth_simulateV1` spec.
@@ -98,7 +99,7 @@ impl TransferInspector {
 
 impl<DB> Inspector<DB> for TransferInspector
 where
-    DB: Database,
+    DB: SyncDatabase,
 {
     fn call(
         &mut self,
@@ -107,8 +108,8 @@ where
     ) -> Option<CallOutcome> {
         if let Some(value) = inputs.transfer_value() {
             self.on_transfer(
-                inputs.transfer_from(),
-                inputs.transfer_to(),
+                inputs.transfer_from().1,
+                inputs.transfer_to().1,
                 value,
                 TransferKind::Call,
                 &mut context.journaled_state,
@@ -131,7 +132,13 @@ where
             CreateScheme::Create2 { .. } => TransferKind::Create2,
         };
 
-        self.on_transfer(inputs.caller, address, inputs.value, kind, &mut context.journaled_state);
+        self.on_transfer(
+            inputs.caller.1,
+            address,
+            inputs.value,
+            kind,
+            &mut context.journaled_state,
+        );
 
         None
     }
@@ -147,13 +154,13 @@ where
                     context.env.tx.nonce.unwrap_or_else(|| {
                         context.journaled_state.account(inputs.caller).info.nonce
                     });
-                inputs.caller.create(nonce)
+                inputs.caller.1.create(nonce)
             }
-            EOFCreateKind::Opcode { created_address, .. } => created_address,
+            EOFCreateKind::Opcode { created_address, .. } => created_address.1,
         };
 
         self.on_transfer(
-            inputs.caller,
+            inputs.caller.1,
             address,
             inputs.value,
             TransferKind::EofCreate,
@@ -163,11 +170,11 @@ where
         None
     }
 
-    fn selfdestruct(&mut self, contract: Address, target: Address, value: U256) {
+    fn selfdestruct(&mut self, contract: ChainAddress, target: ChainAddress, value: U256) {
         self.transfers.push(TransferOperation {
             kind: TransferKind::SelfDestruct,
-            from: contract,
-            to: target,
+            from: contract.1,
+            to: target.1,
             value,
         });
     }

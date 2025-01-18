@@ -25,7 +25,7 @@ use alloy_primitives::{hex, Selector};
 use alloy_rpc_types_trace::geth::FourByteFrame;
 use revm::{
     interpreter::{CallInputs, CallOutcome},
-    Database, EvmContext, Inspector,
+    EvmContext, Inspector, SyncDatabase,
 };
 use std::collections::HashMap;
 
@@ -45,7 +45,7 @@ impl FourByteInspector {
 
 impl<DB> Inspector<DB> for FourByteInspector
 where
-    DB: Database,
+    DB: SyncDatabase,
 {
     fn call(
         &mut self,

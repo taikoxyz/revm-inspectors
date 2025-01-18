@@ -1,4 +1,5 @@
 use crate::{
+    chain_address,
     opcode::immediate_size,
     tracing::{
         arena::PushTraceKind,
@@ -16,8 +17,8 @@ use revm::{
         CallInputs, CallOutcome, CallScheme, CreateInputs, CreateOutcome, EOFCreateInputs,
         InstructionResult, Interpreter, InterpreterResult, OpCode,
     },
-    primitives::SpecId,
-    Database, EvmContext, Inspector, JournalEntry,
+    primitives::{ChainAddress, SpecId},
+    EvmContext, Inspector, JournalEntry, SyncDatabase,
 };
 
 mod arena;
@@ -233,7 +234,7 @@ impl TracingInspector {
     ///
     /// Returns true if the `to` address is a precompile contract and the value is zero.
     #[inline]
-    fn is_precompile_call<DB: Database>(
+    fn is_precompile_call<DB: SyncDatabase>(
         &self,
         context: &EvmContext<DB>,
         to: &Address,
@@ -290,7 +291,7 @@ impl TracingInspector {
     ///
     /// Invoked on [Inspector::call].
     #[allow(clippy::too_many_arguments)]
-    fn start_trace_on_call<DB: Database>(
+    fn start_trace_on_call<DB: SyncDatabase>(
         &mut self,
         context: &EvmContext<DB>,
         address: Address,
@@ -335,13 +336,13 @@ impl TracingInspector {
     /// # Panics
     ///
     /// This expects an existing trace [Self::start_trace_on_call]
-    fn fill_trace_on_call_end<DB: Database>(
+    fn fill_trace_on_call_end<DB: SyncDatabase>(
         &mut self,
         _context: &mut EvmContext<DB>,
         result: &InterpreterResult,
         created_address: Option<Address>,
     ) {
-        let InterpreterResult { result, ref output, ref gas } = *result;
+        let InterpreterResult { result, ref output, ref gas , call_options: _} = *result;
 
         let trace_idx = self.pop_trace_idx();
         let trace = &mut self.traces.arena[trace_idx].trace;
@@ -369,7 +370,11 @@ impl TracingInspector {
     /// This expects an existing [CallTrace], in other words, this panics if not within the context
     /// of a call.
     #[cold]
-    fn start_step<DB: Database>(&mut self, interp: &mut Interpreter, context: &mut EvmContext<DB>) {
+    fn start_step<DB: SyncDatabase>(
+        &mut self,
+        interp: &mut Interpreter,
+        context: &mut EvmContext<DB>,
+    ) {
         let trace_idx = self.last_trace_idx();
         let trace = &mut self.traces.arena[trace_idx];
 
@@ -433,7 +438,7 @@ impl TracingInspector {
             pc: interp.program_counter(),
             code_section_idx: interp.function_stack.current_code_idx,
             op,
-            contract: interp.contract.target_address,
+            contract: interp.contract.target_address.1,
             stack,
             push_stack: None,
             memory,
@@ -457,7 +462,7 @@ impl TracingInspector {
     ///
     /// Invoked on [Inspector::step_end].
     #[cold]
-    fn fill_step_on_step_end<DB: Database>(
+    fn fill_step_on_step_end<DB: SyncDatabase>(
         &mut self,
         interp: &mut Interpreter,
         context: &mut EvmContext<DB>,
@@ -522,7 +527,7 @@ impl TracingInspector {
 
 impl<DB> Inspector<DB> for TracingInspector
 where
-    DB: Database,
+    DB: SyncDatabase,
 {
     #[inline]
     fn step(&mut self, interp: &mut Interpreter, context: &mut EvmContext<DB>) {
@@ -575,15 +580,15 @@ where
         let maybe_precompile = self
             .config
             .exclude_precompile_calls
-            .then(|| self.is_precompile_call(context, &to, &value));
+            .then(|| self.is_precompile_call(context, &to.1, &value));
 
         self.start_trace_on_call(
             context,
-            to,
+            to.1,
             inputs.input.clone(),
             value,
             inputs.scheme.into(),
-            from,
+            from.1,
             inputs.gas_limit,
             maybe_precompile,
         );
@@ -614,7 +619,7 @@ where
             inputs.init_code.clone(),
             inputs.value,
             inputs.scheme.into(),
-            inputs.caller,
+            inputs.caller.1,
             inputs.gas_limit,
             Some(false),
         );
@@ -638,11 +643,11 @@ where
         inputs: &mut EOFCreateInputs,
     ) -> Option<CreateOutcome> {
         let address = if let Some(address) = inputs.kind.created_address() {
-            *address
+            address.1
         } else {
             let _ = context.load_account(inputs.caller);
             let nonce = context.journaled_state.account(inputs.caller).info.nonce;
-            inputs.caller.create(nonce)
+            inputs.caller.1.create(nonce)
         };
         self.start_trace_on_call(
             context,
@@ -650,7 +655,7 @@ where
             Bytes::new(),
             inputs.value,
             CallKind::EOFCreate,
-            inputs.caller,
+            inputs.caller.1,
             inputs.gas_limit,
             Some(false),
         );
@@ -668,10 +673,10 @@ where
         outcome
     }
 
-    fn selfdestruct(&mut self, contract: Address, target: Address, value: U256) {
+    fn selfdestruct(&mut self, contract: ChainAddress, target: ChainAddress, value: U256) {
         let node = self.last_trace();
-        node.trace.selfdestruct_address = Some(contract);
-        node.trace.selfdestruct_refund_target = Some(target);
+        node.trace.selfdestruct_address = Some(contract.1);
+        node.trace.selfdestruct_refund_target = Some(target.1);
         node.trace.selfdestruct_transferred_value = Some(value);
     }
 }

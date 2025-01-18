@@ -12,6 +12,7 @@ use revm::{
 
 use crate::utils::inspect;
 use revm_inspectors::{
+    chain_address,
     tracing::{TracingInspector, TracingInspectorConfig},
     transfer::{TransferInspector, TransferKind, TransferOperation},
 };
@@ -38,7 +39,7 @@ fn test_internal_transfers() {
         cfg.clone(),
         BlockEnv::default(),
         TxEnv {
-            caller: deployer,
+            caller: chain_address(deployer),
             gas_limit: 1000000,
             transact_to: TransactTo::Create,
             data: code.into(),
@@ -59,13 +60,13 @@ fn test_internal_transfers() {
     };
     db.commit(res.state);
 
-    let acc = db.load_account(deployer).unwrap();
+    let acc = db.load_account(chain_address(deployer)).unwrap();
     acc.info.balance = U256::from(u64::MAX);
 
     let tx_env = TxEnv {
-        caller: deployer,
+        caller: chain_address(deployer),
         gas_limit: 100000000,
-        transact_to: TransactTo::Call(addr),
+        transact_to: TransactTo::Call(chain_address(addr)),
         data: hex!("830c29ae0000000000000000000000000000000000000000000000000000000000000000")
             .into(),
         value: U256::from(10),

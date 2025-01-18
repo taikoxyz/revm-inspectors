@@ -17,9 +17,7 @@ use revm::{
     interpreter::{
         return_revert, CallInputs, CallOutcome, CallScheme, CreateInputs, CreateOutcome, Gas,
         InstructionResult, Interpreter, InterpreterResult,
-    },
-    primitives::{Env, ExecutionResult, Output, ResultAndState, TransactTo},
-    ContextPrecompiles, Database, DatabaseRef, EvmContext, Inspector,
+    }, primitives::{ChainAddress, Env, ExecutionResult, Output, ResultAndState, TransactTo}, ContextPrecompiles, DatabaseRef, EvmContext, Inspector, SyncDatabase, SyncDatabaseRef
 };
 
 pub(crate) mod bindings;
@@ -212,8 +210,8 @@ impl JsInspector {
         db: &DB,
     ) -> Result<serde_json::Value, JsInspectorError>
     where
-        DB: DatabaseRef,
-        <DB as DatabaseRef>::Error: std::fmt::Display,
+        DB: SyncDatabaseRef,
+        <DB as SyncDatabaseRef>::Error: std::fmt::Display,
     {
         let result = self.result(res, env, db)?;
         Ok(to_serde_value(result, &mut self.ctx)?)
@@ -227,8 +225,8 @@ impl JsInspector {
         db: &DB,
     ) -> Result<JsValue, JsInspectorError>
     where
-        DB: DatabaseRef,
-        <DB as DatabaseRef>::Error: std::fmt::Display,
+        DB: SyncDatabaseRef,
+        <DB as SyncDatabaseRef>::Error: std::fmt::Display,
     {
         let ResultAndState { result, state } = res;
         let (db, _db_guard) = EvmDbRef::new(&state, db);
@@ -257,7 +255,7 @@ impl JsInspector {
         };
 
         if let TransactTo::Call(target) = env.tx.transact_to {
-            to = Some(target);
+            to = Some(target.1);
         }
 
         let ctx = JsEvmContext {
@@ -266,7 +264,7 @@ impl JsInspector {
                 TransactTo::Create => "CREATE",
             }
             .to_string(),
-            from: env.tx.caller,
+            from: env.tx.caller.1,
             to,
             input: env.tx.data.clone(),
             gas: env.tx.gas_limit,
@@ -274,7 +272,7 @@ impl JsInspector {
             gas_price: env.tx.gas_price.try_into().unwrap_or(u64::MAX),
             value: env.tx.value,
             block: env.block.number.try_into().unwrap_or(u64::MAX),
-            coinbase: env.block.coinbase,
+            coinbase: env.block.coinbase.1,
             output: output_bytes.unwrap_or_default(),
             time: env.block.timestamp.to_string(),
             intrinsic_gas: 0,
@@ -373,7 +371,7 @@ impl JsInspector {
     }
 
     /// Registers the precompiles in the JS context
-    fn register_precompiles<DB: Database>(&mut self, precompiles: &ContextPrecompiles<DB>) {
+    fn register_precompiles<DB: SyncDatabase>(&mut self, precompiles: &ContextPrecompiles<DB>) {
         if !self.precompiles_registered {
             return;
         }
@@ -387,8 +385,8 @@ impl JsInspector {
 
 impl<DB> Inspector<DB> for JsInspector
 where
-    DB: Database + DatabaseRef,
-    <DB as DatabaseRef>::Error: std::fmt::Display,
+    DB: SyncDatabase + SyncDatabaseRef,
+    <DB as SyncDatabaseRef>::Error: std::fmt::Display,
 {
     fn step(&mut self, interp: &mut Interpreter, context: &mut EvmContext<DB>) {
         if self.step_fn.is_none() {
@@ -463,11 +461,11 @@ where
 
         let value = inputs.transfer_value().unwrap_or_default();
         self.push_call(
-            to,
+            to.1,
             inputs.input.clone(),
             value,
             inputs.scheme.into(),
-            from,
+            from.1,
             inputs.gas_limit,
         );
 
@@ -524,7 +522,7 @@ where
             inputs.init_code.clone(),
             inputs.value,
             inputs.scheme.into(),
-            inputs.caller,
+            inputs.caller.1,
             inputs.gas_limit,
         );
 
@@ -562,7 +560,7 @@ where
         outcome
     }
 
-    fn selfdestruct(&mut self, _contract: Address, _target: Address, _value: U256) {
+    fn selfdestruct(&mut self, _contract: ChainAddress, _target: ChainAddress, _value: U256) {
         // This is exempt from the root call constraint, because selfdestruct is treated as a
         // new scope that is entered and immediately exited.
         if self.enter_fn.is_some() {
@@ -631,11 +629,14 @@ fn js_error_to_revert(err: JsError) -> InterpreterResult {
         result: InstructionResult::Revert,
         output: err.to_string().into(),
         gas: Gas::new(0),
+        call_options: None,
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::chain_address;
+
     use super::*;
 
     use alloy_primitives::{hex, Address};
@@ -683,12 +684,12 @@ mod tests {
 
         // Insert the caller
         db.insert_account_info(
-            Address::ZERO,
+            chain_address(Address::ZERO),
             AccountInfo { balance: U256::from(1e18), ..Default::default() },
         );
         // Insert the contract
         db.insert_account_info(
-            addr,
+            chain_address(addr),
             AccountInfo {
                 code: Some(Bytecode::LegacyRaw(
                     /* PUSH1 1, PUSH1 1, STOP */
@@ -705,7 +706,7 @@ mod tests {
             TxEnv {
                 gas_price: U256::from(1024),
                 gas_limit: 1_000_000,
-                transact_to: TransactTo::Call(addr),
+                transact_to: TransactTo::Call(chain_address(addr)),
                 ..Default::default()
             },
         );

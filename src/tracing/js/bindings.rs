@@ -1,13 +1,13 @@
 //! Type bindings for js tracing inspector
 
-use crate::tracing::{
+use crate::{chain_address, tracing::{
     js::builtins::{
         address_to_uint8_array, address_to_uint8_array_value, bytes_from_value, bytes_to_address,
         bytes_to_b256, to_bigint, to_uint8_array, to_uint8_array_value,
     },
     types::CallKind,
     TransactionContext,
-};
+}};
 use alloy_primitives::{Address, Bytes, B256, U256};
 use boa_engine::{
     js_string,
@@ -22,7 +22,7 @@ use revm::{
         OpCode, SharedMemory, Stack,
     },
     primitives::{AccountInfo, Bytecode, EvmState, KECCAK_EMPTY},
-    DatabaseRef,
+    DatabaseRef, SyncDatabaseRef,
 };
 use std::{cell::RefCell, rc::Rc};
 
@@ -336,7 +336,7 @@ impl StateRef {
     }
 
     fn get_account(&self, address: &Address) -> Option<AccountInfo> {
-        self.0.with_inner(|state| state.get(address).map(|acc| acc.info.clone()))?
+        self.0.with_inner(|state| state.get(&chain_address(*address)).map(|acc| acc.info.clone()))?
     }
 }
 
@@ -352,7 +352,7 @@ pub(crate) struct GcDb<DB: 'static>(GuardedNullableGc<DB>);
 
 impl<DB> GcDb<DB>
 where
-    DB: DatabaseRef + 'static,
+    DB: SyncDatabaseRef + 'static,
 {
     /// Creates a new stack reference
     fn new<'a>(db: DB) -> (Self, GcGuard<'a, DB>) {
@@ -751,7 +751,7 @@ impl EvmDbRef {
     /// Creates a new evm and db JS object.
     pub(crate) fn new<'a, 'b, DB>(state: &'a EvmState, db: &'b DB) -> (Self, EvmDbGuard<'a, 'b>)
     where
-        DB: DatabaseRef,
+        DB: SyncDatabaseRef,
         DB::Error: std::fmt::Display,
     {
         let (state, state_guard) = StateRef::new(state);
@@ -770,12 +770,14 @@ impl EvmDbRef {
             >(Box::new(db))
         };
 
-        let (db, db_guard) = GcDb::new(js_db);
+        // TODO(Brecht)
+        unimplemented!("todo")
+        // let (db, db_guard) = GcDb::new(js_db);
 
-        let inner = EvmDbRefInner { state, db };
-        let this = Self { inner: Rc::new(inner) };
-        let guard = EvmDbGuard { _state_guard: state_guard, _db_guard: db_guard };
-        (this, guard)
+        // let inner = EvmDbRefInner { state, db };
+        // let this = Self { inner: Rc::new(inner) };
+        // let guard = EvmDbGuard { _state_guard: state_guard, _db_guard: db_guard };
+        // (this, guard)
     }
 
     fn read_basic(&self, address: JsValue, ctx: &mut Context) -> JsResult<Option<AccountInfo>> {
@@ -943,29 +945,29 @@ pub(crate) struct EvmDbGuard<'a, 'b> {
 }
 
 /// A wrapper Database for the JS context.
-pub(crate) struct JsDb<DB: DatabaseRef>(DB);
+pub(crate) struct JsDb<DB: SyncDatabaseRef>(DB);
 
 impl<DB> DatabaseRef for JsDb<DB>
 where
-    DB: DatabaseRef,
+    DB: SyncDatabaseRef,
     DB::Error: std::fmt::Display,
 {
     type Error = String;
 
     fn basic_ref(&self, _address: Address) -> Result<Option<AccountInfo>, Self::Error> {
-        self.0.basic_ref(_address).map_err(|e| e.to_string())
+        self.0.basic_ref(chain_address(_address)).map_err(|e| e.to_string())
     }
 
     fn code_by_hash_ref(&self, _code_hash: B256) -> Result<Bytecode, Self::Error> {
-        self.0.code_by_hash_ref(_code_hash).map_err(|e| e.to_string())
+        self.0.code_by_hash_ref(1, _code_hash).map_err(|e| e.to_string())
     }
 
     fn storage_ref(&self, _address: Address, _index: U256) -> Result<U256, Self::Error> {
-        self.0.storage_ref(_address, _index).map_err(|e| e.to_string())
+        self.0.storage_ref(chain_address(_address), _index).map_err(|e| e.to_string())
     }
 
     fn block_hash_ref(&self, _number: u64) -> Result<B256, Self::Error> {
-        self.0.block_hash_ref(_number).map_err(|e| e.to_string())
+        self.0.block_hash_ref(1, _number).map_err(|e| e.to_string())
     }
 }
 
@@ -1079,7 +1081,7 @@ mod tests {
             assert!(res.is_err());
         }
         let addr = Address::default();
-        db.insert_account_info(addr, Default::default());
+        db.insert_account_info(chain_address(addr), Default::default());
 
         {
             let (db, guard) = EvmDbRef::new(&state, &db);

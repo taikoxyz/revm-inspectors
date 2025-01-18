@@ -11,7 +11,7 @@ use alloy_rpc_types_trace::geth::{
     GethDefaultTracingOptions, PreStateConfig, PreStateFrame, PreStateMode, StructLog,
 };
 use revm::{
-    db::DatabaseRef,
+    db::SyncDatabaseRef,
     primitives::{EvmState, ResultAndState},
 };
 use std::{
@@ -223,7 +223,7 @@ impl<'a> GethTraceBuilder<'a> {
     /// * `state` - The state post-transaction execution.
     /// * `diff_mode` - if prestate is in diff or prestate mode.
     /// * `db` - The database to fetch state pre-transaction execution.
-    pub fn geth_prestate_traces<DB: DatabaseRef>(
+    pub fn geth_prestate_traces<DB: SyncDatabaseRef>(
         &self,
         ResultAndState { state, .. }: &ResultAndState,
         prestate_config: &PreStateConfig,
@@ -238,7 +238,7 @@ impl<'a> GethTraceBuilder<'a> {
         }
     }
 
-    fn geth_prestate_pre_traces<DB: DatabaseRef>(
+    fn geth_prestate_pre_traces<DB: SyncDatabaseRef>(
         &self,
         state: &EvmState,
         db: DB,
@@ -261,13 +261,13 @@ impl<'a> GethTraceBuilder<'a> {
                 }
             }
 
-            prestate.0.insert(addr, acc_state);
+            prestate.0.insert(addr.1, acc_state);
         }
 
         Ok(PreStateFrame::Default(prestate))
     }
 
-    fn geth_prestate_diff_traces<DB: DatabaseRef>(
+    fn geth_prestate_diff_traces<DB: SyncDatabaseRef>(
         &self,
         state: &EvmState,
         db: DB,
@@ -300,8 +300,8 @@ impl<'a> GethTraceBuilder<'a> {
                 }
             }
 
-            state_diff.pre.insert(addr, pre_state);
-            state_diff.post.insert(addr, post_state);
+            state_diff.pre.insert(addr.1, pre_state);
+            state_diff.post.insert(addr.1, post_state);
 
             // determine the change type
             let pre_change = if changed_acc.is_created() {
@@ -315,7 +315,7 @@ impl<'a> GethTraceBuilder<'a> {
                 AccountChangeKind::Modify
             };
 
-            account_change_kinds.insert(addr, (pre_change, post_change));
+            account_change_kinds.insert(addr.1, (pre_change, post_change));
         }
 
         // ensure we're only keeping changed entries

@@ -13,6 +13,7 @@ use revm::{
         TxEnv,
     },
 };
+use revm_inspectors::chain_address;
 use revm_inspectors::tracing::{MuxInspector, TracingInspector, TracingInspectorConfig};
 
 #[test]
@@ -58,9 +59,9 @@ fn test_geth_calltracer_logs() {
         TracingInspector::new(TracingInspectorConfig::default_geth().set_record_logs(true));
 
     let env = evm.env_with_tx(TxEnv {
-        caller: deployer,
+        caller: chain_address(deployer),
         gas_limit: 1000000,
-        transact_to: TransactTo::Call(addr),
+        transact_to: TransactTo::Call(chain_address(addr)),
         data: Bytes::default(), // call fallback
         ..Default::default()
     });
@@ -164,9 +165,9 @@ fn test_geth_mux_tracer() {
     let mut insp = MuxInspector::try_from_config(config.clone()).unwrap();
 
     let env = evm.env_with_tx(TxEnv {
-        caller: deployer,
+        caller: chain_address(deployer),
         gas_limit: 1000000,
-        transact_to: TransactTo::Call(addr),
+        transact_to: TransactTo::Call(chain_address(addr)),
         data: Bytes::default(), // call fallback
         ..Default::default()
     });
@@ -232,10 +233,10 @@ fn test_geth_inspector_reset() {
         cfg.clone(),
         BlockEnv::default(),
         TxEnv {
-            caller: Address::ZERO,
+            caller: chain_address(Address::ZERO),
             gas_limit: 1000000,
             gas_price: Default::default(),
-            transact_to: TransactTo::Call(Address::ZERO),
+            transact_to: TransactTo::Call(chain_address(Address::ZERO)),
             ..Default::default()
         },
     );

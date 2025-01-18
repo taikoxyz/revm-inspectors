@@ -15,6 +15,10 @@
 #![deny(unused_must_use, rust_2018_idioms)]
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 
+/// Default to chain id 1 (mainnet)
+/// Reth should call `set_chain_id` to set the chain id before running revm-inspectors.
+pub static CHAIN_ID: LazyLock<Mutex<u64>> = std::sync::LazyLock::new(|| Mutex::new(1));
+
 /// An inspector implementation for an EIP2930 Accesslist
 pub mod access_list;
 
@@ -27,4 +31,20 @@ pub mod tracing;
 /// An inspector for recording internal transfers.
 pub mod transfer;
 
+use std::sync::{LazyLock, Mutex};
+
+use alloy_primitives::Address;
 pub use colorchoice::ColorChoice;
+use revm::primitives::ChainAddress;
+
+pub fn set_chain_id(id: u64) {
+    *CHAIN_ID.lock().unwrap() = id;
+}
+
+pub fn get_chain_id() -> u64 {
+    *CHAIN_ID.lock().unwrap()
+}
+
+pub fn chain_address(addr: Address) -> ChainAddress {
+    ChainAddress(get_chain_id(), addr)
+}

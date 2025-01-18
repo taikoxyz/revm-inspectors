@@ -14,8 +14,9 @@ use revm::{
     },
     DatabaseCommit,
 };
-use revm_inspectors::tracing::{
-    parity::populate_state_diff, TracingInspector, TracingInspectorConfig,
+use revm_inspectors::{
+    chain_address,
+    tracing::{parity::populate_state_diff, TracingInspector, TracingInspectorConfig},
 };
 
 #[test]
@@ -45,8 +46,8 @@ fn test_parity_selfdestruct(spec_id: SpecId) {
     let value = U256::from(69);
 
     let mut evm = TestEvm::new_with_spec_id(spec_id);
-    evm.db.insert_account_info(deployer, AccountInfo { balance: value, ..Default::default() });
-    evm.env.tx.caller = deployer;
+    evm.db.insert_account_info(chain_address(deployer), AccountInfo { balance: value, ..Default::default() });
+    evm.env.tx.caller = chain_address(deployer);
     evm.env.tx.value = value;
 
     let addr = evm.simple_deploy(code.into());
@@ -54,9 +55,9 @@ fn test_parity_selfdestruct(spec_id: SpecId) {
     let mut insp = TracingInspector::new(TracingInspectorConfig::default_parity());
 
     let env = evm.env_with_tx(TxEnv {
-        caller: deployer,
+        caller: chain_address(deployer),
         gas_limit: 1000000,
-        transact_to: TransactTo::Call(addr),
+        transact_to: TransactTo::Call(chain_address(addr)),
         data: hex!("43d726d6").into(),
         ..Default::default()
     });
@@ -109,7 +110,7 @@ fn test_parity_constructor_selfdestruct() {
     let deployer = Address::ZERO;
 
     let mut evm = TestEvm::new_with_spec_id(SpecId::LONDON);
-    evm.env.tx.caller = deployer;
+    evm.env.tx.caller = chain_address(deployer);
 
     let mut insp = TracingInspector::new(TracingInspectorConfig::default_parity());
     let addr = evm.deploy(code.into(), &mut insp).expect("failed to deploy contract");
@@ -118,9 +119,9 @@ fn test_parity_constructor_selfdestruct() {
     let mut insp = TracingInspector::new(TracingInspectorConfig::default_parity());
 
     let env = evm.env_with_tx(TxEnv {
-        caller: deployer,
+        caller: chain_address(deployer),
         gas_limit: 1000000,
-        transact_to: TransactTo::Call(addr),
+        transact_to: TransactTo::Call(chain_address(addr)),
         data: hex!("43d726d6").into(),
         ..Default::default()
     });
@@ -155,18 +156,18 @@ fn test_parity_call_selfdestruct() {
     let value = U256::from(69);
 
     let mut evm = TestEvm::new_with_spec_id(SpecId::LONDON);
-    evm.db.insert_account_info(deployer, AccountInfo { balance: value, ..Default::default() });
-    evm.env.tx.caller = deployer;
+    evm.db.insert_account_info(chain_address(deployer), AccountInfo { balance: value, ..Default::default() });
+    evm.env.tx.caller = chain_address(deployer);
     evm.env.tx.value = value;
 
     let to = evm.simple_deploy(code.into());
 
-    evm.db.accounts.get_mut(&to).unwrap().info.balance = balance;
+    evm.db.accounts.get_mut(&chain_address(to)).unwrap().info.balance = balance;
 
     let env = evm.env_with_tx(TxEnv {
-        caller,
+        caller: chain_address(caller),
         gas_limit: 100000000,
-        transact_to: TransactTo::Call(to),
+        transact_to: TransactTo::Call(chain_address(to)),
         data: input.to_vec().into(),
         ..Default::default()
     });
@@ -218,7 +219,7 @@ fn test_parity_statediff_blob_commit() {
     let cfg = CfgEnvWithHandlerCfg::new(CfgEnv::default(), HandlerCfg::new(SpecId::CANCUN));
 
     db.insert_account_info(
-        caller,
+        chain_address(caller),
         AccountInfo { balance: U256::from(u64::MAX), ..Default::default() },
     );
 
@@ -232,9 +233,9 @@ fn test_parity_statediff_blob_commit() {
             ..Default::default()
         },
         TxEnv {
-            caller,
+            caller: chain_address(caller),
             gas_limit: 1000000,
-            transact_to: TransactTo::Call(to),
+            transact_to: TransactTo::Call(chain_address(to)),
             gas_price: U256::from(150),
             blob_hashes: vec!["0x01af2fd94f17364bc8ef371c4c90c3a33855ff972d10b9c03d0445b3fca063ea"
                 .parse()
@@ -250,7 +251,8 @@ fn test_parity_statediff_blob_commit() {
     let mut full_trace = insp.into_parity_builder().into_trace_results(&res.result, &trace_types);
 
     let state_diff = full_trace.state_diff.as_mut().unwrap();
-    populate_state_diff(state_diff, db, res.state.iter()).unwrap();
+    populate_state_diff(state_diff, db, res.state.iter().map_while(|(a, b)| Some((a, b))))
+        .unwrap();
 
     assert!(!state_diff.contains_key(&to));
     assert!(state_diff.contains_key(&caller));
@@ -297,9 +299,9 @@ fn test_parity_delegatecall_selfdestruct() {
     // Call DelegateCall contract with SelfDestructTarget address
     let mut insp = TracingInspector::new(TracingInspectorConfig::default_parity());
     let env = evm.env_with_tx(TxEnv {
-        caller: deployer,
+        caller: chain_address(deployer),
         gas_limit: 1000000,
-        transact_to: TransactTo::Call(delegate_addr),
+        transact_to: TransactTo::Call(chain_address(delegate_addr)),
         data: input_data.into(),
         ..Default::default()
     });

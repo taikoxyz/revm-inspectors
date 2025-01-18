@@ -7,11 +7,12 @@ use revm::{
         BlockEnv, EVMError, Env, EnvWithHandlerCfg, ExecutionResult, HandlerCfg, ResultAndState,
         SpecId, TransactTo, TxEnv,
     },
-    Database, DatabaseCommit, GetInspector,
+    DatabaseCommit, GetInspector, SyncDatabase,
 };
 use revm_inspectors::tracing::{
     TraceWriter, TraceWriterConfig, TracingInspector, TracingInspectorConfig,
 };
+use revm_inspectors::chain_address;
 use std::convert::Infallible;
 
 type TestDb = CacheDB<EmptyDB>;
@@ -95,7 +96,7 @@ impl TestEvm {
         inspector: I,
     ) -> Result<ExecutionResult, EVMError<Infallible>> {
         self.env.tx.data = data;
-        self.env.tx.transact_to = TransactTo::Call(address);
+        self.env.tx.transact_to = TransactTo::Call(chain_address(address));
         let (ResultAndState { result, state }, env) = self.inspect(inspector)?;
         self.db.commit(state);
         self.env = env;
@@ -117,7 +118,7 @@ pub fn inspect<DB, I>(
     inspector: I,
 ) -> Result<(ResultAndState, EnvWithHandlerCfg), EVMError<DB::Error>>
 where
-    DB: Database,
+    DB: SyncDatabase,
     I: GetInspector<DB>,
 {
     let mut evm = revm::Evm::builder()
@@ -150,7 +151,7 @@ pub fn print_traces(tracer: &TracingInspector) {
 pub fn deploy_contract(code: Bytes, deployer: Address, spec_id: SpecId) -> (Address, TestEvm) {
     let mut evm = TestEvm::new();
 
-    evm.env.tx.caller = deployer;
+    evm.env.tx.caller = chain_address(deployer);
     evm.env.handler_cfg = HandlerCfg::new(spec_id);
 
     (evm.simple_deploy(code), evm)

@@ -4,7 +4,7 @@ use revm::{
         opcode::{self, OpCode},
         Interpreter,
     },
-    Database, EvmContext, Inspector,
+    EvmContext, Inspector, SyncDatabase,
 };
 use std::collections::HashMap;
 
@@ -59,7 +59,7 @@ impl OpcodeGasInspector {
 
 impl<DB> Inspector<DB> for OpcodeGasInspector
 where
-    DB: Database,
+    DB: SyncDatabase,
 {
     fn step(&mut self, interp: &mut Interpreter, _context: &mut EvmContext<DB>) {
         let opcode_value = interp.current_opcode();
@@ -99,6 +99,8 @@ pub fn immediate_size(op: OpCode, bytes_after: &[u8]) -> u8 {
 
 #[cfg(test)]
 mod tests {
+    use crate::get_chain_id;
+
     use super::*;
     use revm::{
         db::{CacheDB, EmptyDB},
@@ -109,7 +111,7 @@ mod tests {
     fn test_opcode_counter_inspector() {
         let mut opcode_counter = OpcodeGasInspector::new();
         let contract = Contract::default();
-        let mut interpreter = Interpreter::new(contract, 10000, false);
+        let mut interpreter = Interpreter::new(contract, 10000, false, get_chain_id(), false);
         let db = CacheDB::new(EmptyDB::default());
 
         let opcodes = [
@@ -129,7 +131,7 @@ mod tests {
     fn test_with_variety_of_opcodes() {
         let mut opcode_counter = OpcodeGasInspector::new();
         let contract = Contract::default();
-        let mut interpreter = Interpreter::new(contract, 2024, false);
+        let mut interpreter = Interpreter::new(contract, 2024, false, get_chain_id(), false);
         let db = CacheDB::new(EmptyDB::default());
 
         let opcodes = [

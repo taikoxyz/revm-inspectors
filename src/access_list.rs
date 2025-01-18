@@ -2,7 +2,7 @@ use alloy_primitives::{Address, B256};
 use alloy_rpc_types_eth::{AccessList, AccessListItem};
 use revm::{
     interpreter::{opcode, Interpreter},
-    Database, EvmContext, Inspector,
+    EvmContext, Inspector, SyncDatabase,
 };
 use std::collections::{BTreeSet, HashMap, HashSet};
 
@@ -60,7 +60,7 @@ impl AccessListInspector {
 
 impl<DB> Inspector<DB> for AccessListInspector
 where
-    DB: Database,
+    DB: SyncDatabase,
 {
     fn step(&mut self, interp: &mut Interpreter, _context: &mut EvmContext<DB>) {
         match interp.current_opcode() {
@@ -68,7 +68,7 @@ where
                 if let Ok(slot) = interp.stack().peek(0) {
                     let cur_contract = interp.contract.target_address;
                     self.access_list
-                        .entry(cur_contract)
+                        .entry(cur_contract.1)
                         .or_default()
                         .insert(B256::from(slot.to_be_bytes()));
                 }

@@ -1,15 +1,18 @@
 use super::walker::CallTraceNodeWalkerBF;
-use crate::tracing::{
-    types::{CallTraceNode, CallTraceStep},
-    utils::load_account_code,
-    TracingInspectorConfig,
+use crate::{
+    chain_address, get_chain_id,
+    tracing::{
+        types::{CallTraceNode, CallTraceStep},
+        utils::load_account_code,
+        TracingInspectorConfig,
+    },
 };
 use alloy_primitives::{map::HashSet, Address, U256, U64};
 use alloy_rpc_types_eth::TransactionInfo;
 use alloy_rpc_types_trace::parity::*;
 use revm::{
-    db::DatabaseRef,
-    primitives::{Account, ExecutionResult, ResultAndState, SpecId, KECCAK_EMPTY},
+    db::SyncDatabaseRef,
+    primitives::{Account, ChainAddress, ExecutionResult, ResultAndState, SpecId, KECCAK_EMPTY},
 };
 use std::{collections::VecDeque, iter::Peekable};
 
@@ -167,7 +170,7 @@ impl ParityTraceBuilder {
     /// Note: this is considered a convenience method that takes the state map of
     /// [ResultAndState] after inspecting a transaction
     /// with the [TracingInspector](crate::tracing::TracingInspector).
-    pub fn into_trace_results_with_state<DB: DatabaseRef>(
+    pub fn into_trace_results_with_state<DB: SyncDatabaseRef>(
         self,
         res: &ResultAndState,
         trace_types: &HashSet<TraceType>,
@@ -187,7 +190,11 @@ impl ParityTraceBuilder {
 
         // check the state diff case
         if let Some(ref mut state_diff) = trace_res.state_diff {
-            populate_state_diff(state_diff, &db, state.iter())?;
+            populate_state_diff(
+                state_diff,
+                &db,
+                state.iter(),
+            )?;
         }
 
         // check the vm trace case
@@ -441,7 +448,7 @@ pub(crate) fn populate_vm_trace_bytecodes<DB, I>(
     breadth_first_addresses: I,
 ) -> Result<(), DB::Error>
 where
-    DB: DatabaseRef,
+    DB: SyncDatabaseRef,
     I: IntoIterator<Item = Address>,
 {
     let mut stack: VecDeque<&mut VmTrace> = VecDeque::new();
@@ -458,7 +465,7 @@ where
 
         let addr = addrs.next().expect("there should be an address");
 
-        let db_acc = db.basic_ref(addr)?.unwrap_or_default();
+        let db_acc = db.basic_ref(chain_address(addr))?.unwrap_or_default();
 
         curr_ref.code = if let Some(code) = db_acc.code {
             code.original_bytes()
@@ -466,7 +473,7 @@ where
             let code_hash =
                 if db_acc.code_hash != KECCAK_EMPTY { db_acc.code_hash } else { continue };
 
-            db.code_by_hash_ref(code_hash)?.original_bytes()
+            db.code_by_hash_ref(get_chain_id(), code_hash)?.original_bytes()
         };
     }
 
@@ -479,16 +486,17 @@ where
 /// in the [ExecutionResult] state map and compares the balance and nonce against what's in the
 /// `db`, which should point to the beginning of the transaction.
 ///
-/// It's expected that `DB` is a revm [Database](revm::db::Database) which at this point already
-/// contains all the accounts that are in the state map and never has to fetch them from disk.
+/// It's expected that `DB` is a revm [Database](revm::db:: SyncDatabase) which at this point
+/// already contains all the accounts that are in the state map and never has to fetch them from
+/// disk.
 pub fn populate_state_diff<'a, DB, I>(
     state_diff: &mut StateDiff,
     db: DB,
     account_diffs: I,
 ) -> Result<(), DB::Error>
 where
-    I: IntoIterator<Item = (&'a Address, &'a Account)>,
-    DB: DatabaseRef,
+    I: IntoIterator<Item = (&'a ChainAddress, &'a Account)>,
+    DB: SyncDatabaseRef,
 {
     for (addr, changed_acc) in account_diffs.into_iter() {
         // if the account was selfdestructed and created during the transaction, we can ignore it
@@ -497,7 +505,7 @@ where
         }
 
         let addr = *addr;
-        let entry = state_diff.entry(addr).or_default();
+        let entry = state_diff.entry(addr.1).or_default();
 
         // we need to fetch the account from the db
         let db_acc = db.basic_ref(addr)?.unwrap_or_default();
@@ -543,7 +551,7 @@ where
                 && !changed_acc.is_selfdestructed()
             {
                 // clear the entry if the account was not changed
-                state_diff.remove(&addr);
+                state_diff.remove(&addr.1);
                 continue;
             }
 
