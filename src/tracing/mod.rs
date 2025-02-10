@@ -17,8 +17,8 @@ use revm::{
         CallInputs, CallOutcome, CallScheme, CreateInputs, CreateOutcome, EOFCreateInputs,
         InstructionResult, Interpreter, InterpreterResult, OpCode,
     },
-    primitives::{ChainAddress, SpecId},
-    EvmContext, Inspector, JournalEntry, SyncDatabase,
+    primitives::{ChainAddress, SpecId, JournalEntry},
+    EvmContext, Inspector, SyncDatabase,
 };
 
 mod arena;
@@ -494,7 +494,7 @@ impl TracingInspector {
             step.storage_change = match (op, journal_entry) {
                 (
                     opcode::SLOAD | opcode::SSTORE,
-                    Some(JournalEntry::StorageChanged { address, key, had_value }),
+                    Some(JournalEntry::StorageChanged { address, key, new, had_value }),
                 ) => {
                     // SAFETY: (Address,key) exists if part if StorageChange
                     let value = context.journaled_state.state[address].storage[key].present_value();
