@@ -35,7 +35,7 @@ alloy-rpc-types-trace = "0.3"
 alloy-sol-types = "0.8"
 alloy-primitives = "0.8"
 # revm = { version = "14", default-features = false, features = ["std"] }
-revm = { git = "https://github.com/taikoxyz/revm.git", branch = "gwyneth-booster", default-features = false, features = ["std"] }
+revm = { git = "https://github.com/taikoxyz/revm-private.git", branch = "v43-gwyneth", default-features = false, features = ["std"] }
 
 #revm = { path = "../../revm-gwyneth/revm/crates/revm", default-features = false, features = ["std"] }
 
