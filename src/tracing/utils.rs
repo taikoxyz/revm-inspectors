@@ -104,11 +104,14 @@ pub(crate) fn load_account_code<DB: DatabaseRef>(
     db: DB,
     db_acc: &revm::state::AccountInfo,
 ) -> Option<Bytes> {
+    let default_chain_id: u64 = 160010; // Default to Gwyneth testnet L1 chain id
     db_acc.code.as_ref().map(|code| code.original_bytes()).or_else(|| {
         if db_acc.code_hash == KECCAK_EMPTY {
             None
         } else {
-            db.code_by_hash_ref(db_acc.code_hash).ok().map(|code| code.original_bytes())
+            db.code_by_hash_ref(default_chain_id, db_acc.code_hash)
+                .ok()
+                .map(|code| code.original_bytes())
         }
     })
 }

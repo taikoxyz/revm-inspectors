@@ -490,7 +490,7 @@ where
             let code_hash =
                 if db_acc.code_hash != KECCAK_EMPTY { db_acc.code_hash } else { continue };
 
-            db.code_by_hash_ref(code_hash)?.original_bytes()
+            db.code_by_hash_ref(addr.chain_id(), code_hash)?.original_bytes()
         };
     }
 
