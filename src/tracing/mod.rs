@@ -431,8 +431,8 @@ impl TracingInspector {
 
         let gas_used = gas_used(
             interp.runtime_flag.spec_id(),
-            interp.gas.spent(),
-            interp.gas.refunded() as u64,
+            interp.control.gas.spent(),
+            interp.control.gas.refunded() as u64,
         );
 
         let mut immediate_bytes = None;
@@ -455,8 +455,8 @@ impl TracingInspector {
             push_stack: None,
             memory,
             returndata,
-            gas_remaining: interp.gas.remaining(),
-            gas_refund_counter: interp.gas.refunded() as u64,
+            gas_remaining: interp.control.gas.remaining(),
+            gas_refund_counter: interp.control.gas.refunded() as u64,
             gas_used,
             decoded: None,
             immediate_bytes,
@@ -528,10 +528,10 @@ impl TracingInspector {
         // The gas cost is the difference between the recorded gas remaining at the start of the
         // step the remaining gas here, at the end of the step.
         // TODO: Figure out why this can overflow. https://github.com/paradigmxyz/revm-inspectors/pull/38
-        step.gas_cost = step.gas_remaining.saturating_sub(interp.gas.remaining());
+        step.gas_cost = step.gas_remaining.saturating_sub(interp.control.gas.remaining());
 
-        // set the status
-        step.status = interp.bytecode.action().as_ref().and_then(|i| i.instruction_result())
+        // set the status - use the control's instruction result directly
+        step.status = Some(interp.control.instruction_result())
     }
 }
 
@@ -607,7 +607,7 @@ where
     }
 
     fn create(&mut self, context: &mut CTX, inputs: &mut CreateInputs) -> Option<CreateOutcome> {
-        let nonce = context.journal_mut().load_account(inputs.caller).ok()?.info.nonce;
+        let nonce = context.journal().load_account(inputs.caller).ok()?.info.nonce;
         self.start_trace_on_call(
             context,
             inputs.created_address(nonce),
