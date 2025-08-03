@@ -15,6 +15,7 @@ use revm::{
         interpreter_types::{InputsTr, Jumps},
         Interpreter,
     },
+    primitives::ChainAddress,
     Inspector,
 };
 
@@ -98,7 +99,7 @@ impl AccessListInspector {
             // We need to exclude the created address if this is a CREATE frame.
             //
             // This assumes that caller has already been loaded but nonce was not increased yet.
-            let nonce = context.journal_ref().evm_state().get(&from).unwrap().info.nonce;
+            let nonce = context.journal_ref().evm_state().get(&ChainAddress(1, from)).unwrap().info.nonce;
             from.create(nonce)
         };
         let precompiles = context.journal_ref().precompile_addresses().clone();

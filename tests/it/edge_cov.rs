@@ -1,5 +1,6 @@
 //! Edge coverage tests
 
+use crate::utils::chain_address;
 use alloy_primitives::{hex, Address, U256};
 use revm::{
     context::TxEnv,
@@ -39,7 +40,7 @@ fn test_edge_coverage() {
     let ctx = Context::mainnet()
         .modify_cfg_chained(|cfg| cfg.spec = SpecId::LONDON)
         .with_tx(TxEnv {
-            caller: deployer,
+            caller: chain_address(deployer),
             gas_limit: 1000000,
             kind: TransactTo::Create,
             data: code.into(),
@@ -66,7 +67,7 @@ fn test_edge_coverage() {
     acc.info.balance = U256::from(u64::MAX);
 
     let tx = TxEnv {
-        caller: deployer,
+        caller: chain_address(deployer),
         gas_limit: 100000000,
         kind: TransactTo::Call(addr),
         nonce: 1,
@@ -88,7 +89,7 @@ fn test_edge_coverage() {
 
     evm.inspector().reset();
     evm.set_tx(TxEnv {
-        caller: deployer,
+        caller: chain_address(deployer),
         gas_limit: 100000000,
         kind: TransactTo::Call(addr),
         nonce: 1,

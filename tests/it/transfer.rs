@@ -1,5 +1,6 @@
 //! Transfer tests
 
+use crate::utils::chain_address;
 use alloy_primitives::{hex, Address, U256};
 use revm::{
     context::TxEnv,
@@ -39,7 +40,7 @@ fn test_internal_transfers() {
         .with_db(db)
         .modify_cfg_chained(|c| c.spec = SpecId::LONDON)
         .with_tx(TxEnv {
-            caller: deployer,
+            caller: chain_address(deployer),
             gas_limit: 1000000,
             kind: TransactTo::Create,
             data: code.into(),
@@ -64,7 +65,7 @@ fn test_internal_transfers() {
     acc.info.balance = U256::from(u64::MAX);
 
     let tx_env = TxEnv {
-        caller: deployer,
+        caller: chain_address(deployer),
         gas_limit: 100000000,
         kind: TransactTo::Call(addr),
         data: hex!("830c29ae0000000000000000000000000000000000000000000000000000000000000000")

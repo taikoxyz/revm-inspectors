@@ -244,7 +244,7 @@ impl<'a> GethTraceBuilder<'a> {
 
         // we only want changed accounts for things like balance changes etc
         for (addr, changed_acc) in account_diffs {
-            let db_acc = db.basic_ref(addr)?.unwrap_or_default();
+            let db_acc = db.basic_ref(addr.1)?.unwrap_or_default();
             let code = code_enabled.then(|| load_account_code(&db, &db_acc)).flatten();
             let mut acc_state = AccountState::from_account_info(db_acc.nonce, db_acc.balance, code);
 
@@ -255,7 +255,7 @@ impl<'a> GethTraceBuilder<'a> {
                 }
             }
 
-            prestate.0.insert(addr, acc_state);
+            prestate.0.insert(addr.1, acc_state);
         }
 
         Ok(PreStateFrame::Default(prestate))
@@ -273,7 +273,7 @@ impl<'a> GethTraceBuilder<'a> {
         let mut account_change_kinds =
             HashMap::with_capacity_and_hasher(account_diffs.len(), Default::default());
         for (addr, changed_acc) in account_diffs {
-            let db_acc = db.basic_ref(addr)?.unwrap_or_default();
+            let db_acc = db.basic_ref(addr.1)?.unwrap_or_default();
 
             let pre_code = code_enabled.then(|| load_account_code(&db, &db_acc)).flatten();
 
@@ -295,8 +295,8 @@ impl<'a> GethTraceBuilder<'a> {
                 }
             }
 
-            state_diff.pre.insert(addr, pre_state);
-            state_diff.post.insert(addr, post_state);
+            state_diff.pre.insert(addr.1, pre_state);
+            state_diff.post.insert(addr.1, post_state);
 
             // determine the change type
             let pre_change = if changed_acc.is_created() {
@@ -310,7 +310,7 @@ impl<'a> GethTraceBuilder<'a> {
                 AccountChangeKind::Modify
             };
 
-            account_change_kinds.insert(addr, (pre_change, post_change));
+            account_change_kinds.insert(addr.1, (pre_change, post_change));
         }
 
         // ensure we're only keeping changed entries

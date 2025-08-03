@@ -8,9 +8,14 @@ use revm::{
     },
     handler::{instructions::EthInstructions, EthPrecompiles, EvmTr},
     interpreter::interpreter::EthInterpreter,
-    primitives::hardfork::SpecId,
+    primitives::{hardfork::SpecId, ChainAddress},
     Context, Database, DatabaseCommit, ExecuteCommitEvm, InspectCommitEvm, Inspector, Journal,
 };
+
+/// Helper function to convert Address to ChainAddress for testing
+pub fn chain_address(addr: Address) -> ChainAddress {
+    ChainAddress(1, addr) // Use chain ID 1 for tests
+}
 use revm_inspectors::tracing::{TraceWriter, TraceWriterConfig, TracingInspector};
 
 pub type ContextDb<DB> = Context<BlockEnv, TxEnv, CfgEnv, DB, Journal<DB>, ()>;
@@ -41,7 +46,7 @@ pub fn deploy_contract<DB: Database + DatabaseCommit>(
     spec: SpecId,
 ) -> ExecutionResult<HaltReason> {
     evm.ctx().modify_tx(|tx| {
-        tx.caller = deployer;
+        tx.caller = chain_address(deployer);
         tx.gas_limit = 1000000;
         tx.kind = TransactTo::Create;
         tx.data = code;
@@ -65,7 +70,7 @@ pub fn inspect_deploy_contract<DB: Database + DatabaseCommit, INSP: Inspector<Co
     evm.ctx().modify_cfg(|cfg| cfg.spec = spec);
     evm.ctx().modify_tx(|tx| {
         *tx = TxEnv {
-            caller: deployer,
+            caller: chain_address(deployer),
             gas_limit: 1000000,
             kind: TransactTo::Create,
             data: code,

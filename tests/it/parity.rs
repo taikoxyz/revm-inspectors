@@ -1,6 +1,6 @@
 //! Parity tests
 
-use crate::utils::{deploy_contract, inspect_deploy_contract, print_traces};
+use crate::utils::{chain_address, deploy_contract, inspect_deploy_contract, print_traces};
 use alloy_primitives::{address, hex, map::HashSet, Address, U256};
 use alloy_rpc_types_eth::TransactionInfo;
 use alloy_rpc_types_trace::parity::{
@@ -63,7 +63,7 @@ fn test_parity_selfdestruct(spec_id: SpecId) {
 
     evm.ctx().modify_tx(|tx| {
         *tx = TxEnv {
-            caller: deployer,
+            caller: chain_address(deployer),
             gas_limit: 1000000,
             kind: TransactTo::Call(addr),
             data: hex!("43d726d6").into(),
@@ -124,7 +124,7 @@ fn test_parity_constructor_selfdestruct() {
 
     let mut evm = Context::mainnet()
         .with_db(CacheDB::<EmptyDB>::default())
-        .modify_tx_chained(|tx| tx.caller = deployer)
+        .modify_tx_chained(|tx| tx.caller = chain_address(deployer))
         .build_mainnet_with_inspector(TracingInspector::new(
             TracingInspectorConfig::default_parity(),
         ));
@@ -139,7 +139,7 @@ fn test_parity_constructor_selfdestruct() {
         .inspect(
             {
                 TxEnv {
-                    caller: deployer,
+                    caller: chain_address(deployer),
                     gas_limit: 1000000,
                     kind: TransactTo::Call(addr),
                     data: hex!("43d726d6").into(),
@@ -188,7 +188,7 @@ fn test_parity_call_selfdestruct() {
             db.insert_account_info(deployer, AccountInfo { balance: value, ..Default::default() });
         })
         .modify_tx_chained(|tx| {
-            tx.caller = deployer;
+            tx.caller = chain_address(deployer);
             tx.value = value;
         })
         .build_mainnet();
@@ -200,7 +200,7 @@ fn test_parity_call_selfdestruct() {
 
     evm.ctx().modify_tx(|tx| {
         *tx = TxEnv {
-            caller,
+            caller: chain_address(caller),
             gas_limit: 100000000,
             kind: TransactTo::Call(to),
             data: input.to_vec().into(),
@@ -264,14 +264,14 @@ fn test_parity_call_selfdestruct_create() {
             );
         })
         .modify_tx_chained(|tx| {
-            tx.caller = caller;
+            tx.caller = chain_address(caller);
             tx.value = value;
         })
         .build_mainnet();
 
     evm.ctx().modify_tx(|tx| {
         *tx = TxEnv {
-            caller,
+            caller: chain_address(caller),
             gas_limit: 100000000,
             kind: TransactTo::Create,
             data: code.to_vec().into(),
@@ -347,7 +347,7 @@ fn test_parity_statediff_blob_commit() {
             b.blob_excess_gas_and_price = Some(BlobExcessGasAndPrice::new(100, false));
         })
         .with_tx(TxEnv {
-            caller,
+            caller: chain_address(caller),
             gas_limit: 1000000,
             kind: TransactTo::Call(to),
             gas_price: 150,
@@ -366,7 +366,7 @@ fn test_parity_statediff_blob_commit() {
         evm.inspector.into_parity_builder().into_trace_results(&res.result, &trace_types);
 
     let state_diff = full_trace.state_diff.as_mut().unwrap();
-    populate_state_diff(state_diff, db, res.state.iter()).unwrap();
+    populate_state_diff(state_diff, db, res.state.iter().map(|(addr, acc)| (&addr.1, acc))).unwrap();
 
     assert!(!state_diff.contains_key(&to));
     assert!(state_diff.contains_key(&caller));
@@ -417,7 +417,7 @@ fn test_parity_delegatecall_selfdestruct() {
 
     // Call DelegateCall contract with SelfDestructTarget address
     evm.set_tx(TxEnv {
-        caller: deployer,
+        caller: chain_address(deployer),
         gas_limit: 1000000,
         kind: TransactTo::Call(delegate_addr),
         data: input_data.into(),

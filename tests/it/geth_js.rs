@@ -1,6 +1,6 @@
 //! Geth Js tracer tests
 
-use crate::utils::deploy_contract;
+use crate::utils::{chain_address, deploy_contract};
 use alloy_primitives::{address, hex, Address};
 use revm::{
     context::TxEnv,
@@ -54,7 +54,7 @@ fn test_geth_jstracer_revert() {
     let mut evm = evm.with_inspector(insp);
     let res = evm
         .inspect_with_tx(TxEnv {
-            caller: deployer,
+            caller: chain_address(deployer),
             gas_limit: 1000000,
             kind: TransactTo::Call(addr),
             data: hex!("c2985578").into(), // call foo
@@ -75,7 +75,7 @@ fn test_geth_jstracer_revert() {
     let mut evm = evm.with_inspector(insp);
     let res = evm
         .inspect_with_tx(TxEnv {
-            caller: deployer,
+            caller: chain_address(deployer),
             gas_limit: 1000000,
             kind: TransactTo::Call(addr),
             data: hex!("febb0f7e").into(), // call bar
@@ -163,7 +163,7 @@ fn test_geth_jstracer_proxy_contract() {
     let mut evm = evm.with_inspector(insp);
     let res = evm
         .inspect_with_tx(TxEnv {
-            caller: deployer,
+            caller: chain_address(deployer),
             gas_limit: 1000000,
             kind: TransactTo::Call(proxy_addr),
             data: input_data.into(),

@@ -27,7 +27,7 @@ use revm::{
     bytecode::opcode::{OpCode, PUSH0, PUSH32},
     context_interface::DBErrorMarker,
     interpreter::{SharedMemory, Stack},
-    primitives::KECCAK_EMPTY,
+    primitives::{ChainAddress, KECCAK_EMPTY},
     state::{AccountInfo, Bytecode, EvmState},
     DatabaseRef,
 };
@@ -342,7 +342,8 @@ impl StateRef {
     }
 
     fn get_account(&self, address: &Address) -> Option<AccountInfo> {
-        self.0.with_inner(|state| state.get(address).map(|acc| acc.info.clone()))?
+        let chain_address = ChainAddress(1, *address); // Use chain ID 1 for JavaScript tracer
+        self.0.with_inner(|state| state.get(&chain_address).map(|acc| acc.info.clone()))?
     }
 }
 

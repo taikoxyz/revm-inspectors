@@ -190,7 +190,7 @@ impl ParityTraceBuilder {
 
         // check the state diff case
         if let Some(ref mut state_diff) = trace_res.state_diff {
-            populate_state_diff(state_diff, &db, state.iter())?;
+            populate_state_diff(state_diff, &db, state.iter().map(|(addr, acc)| (&addr.1, acc)))?;
         }
 
         // check the vm trace case

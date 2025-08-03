@@ -1,5 +1,5 @@
 //! Geth tests
-use crate::utils::deploy_contract;
+use crate::utils::{chain_address, deploy_contract};
 use alloy_primitives::{hex, map::HashMap, Address, Bytes};
 use alloy_rpc_types_eth::TransactionInfo;
 use alloy_rpc_types_trace::geth::{
@@ -63,7 +63,7 @@ fn test_geth_calltracer_logs() {
 
     let mut evm = evm.with_inspector(&mut insp);
     evm.set_tx(TxEnv {
-        caller: deployer,
+        caller: chain_address(deployer),
         gas_limit: 1000000,
         kind: TransactTo::Call(addr),
         data: Bytes::default(), // call fallback
@@ -169,7 +169,7 @@ fn test_geth_mux_tracer() {
     let mut insp = MuxInspector::try_from_config(config.clone()).unwrap();
 
     evm.ctx().set_tx(TxEnv {
-        caller: deployer,
+        caller: chain_address(deployer),
         gas_limit: 1000000,
         kind: TransactTo::Call(addr),
         data: Bytes::default(), // call fallback
@@ -248,7 +248,7 @@ fn test_geth_inspector_reset() {
         .with_db(CacheDB::new(EmptyDB::default()))
         .modify_cfg_chained(|cfg| cfg.spec = SpecId::LONDON)
         .modify_tx_chained(|tx| {
-            tx.caller = Address::ZERO;
+            tx.caller = chain_address(Address::ZERO);
             tx.gas_limit = 1000000;
             tx.gas_price = Default::default();
             tx.kind = TransactTo::Call(Address::ZERO);

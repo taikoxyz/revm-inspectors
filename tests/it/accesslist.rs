@@ -1,5 +1,6 @@
 //! Accesslist tests
 
+use crate::utils::chain_address;
 use alloy_primitives::{address, hex};
 use revm::{
     bytecode::Bytecode, context::TxEnv, context_interface::TransactTo, database::CacheDB,
@@ -35,7 +36,7 @@ fn test_access_list_precompile() {
 
     evm.ctx().modify_tx(|tx| {
         *tx = TxEnv {
-            caller,
+            caller: chain_address(caller),
             gas_limit: 1000000,
             kind: TransactTo::Call(account),
             data: hex!("a5399705").into(),
