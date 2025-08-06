@@ -507,6 +507,9 @@ impl From<CallScheme> for CallKind {
             CallScheme::StaticCall => Self::StaticCall,
             CallScheme::DelegateCall => Self::DelegateCall,
             CallScheme::CallCode => Self::CallCode,
+            CallScheme::ExtCall => Self::Call,
+            CallScheme::ExtStaticCall => Self::StaticCall,
+            CallScheme::ExtDelegateCall => Self::DelegateCall,
         }
     }
 }
