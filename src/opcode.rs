@@ -5,7 +5,7 @@ use revm::{
     bytecode::opcode::{self, OpCode},
     context::{ContextTr, JournalTr},
     interpreter::{
-        interpreter_types::{Immediates, Jumps},
+        interpreter_types::{Immediates, Jumps, LoopControl},
         CallInputs, CallOutcome, CallScheme, CreateInputs, CreateOutcome, CreateScheme,
         Interpreter,
     },
@@ -81,14 +81,14 @@ where
             *self.opcode_counts.entry(opcode).or_default() += 1;
 
             // keep track of the last opcode executed
-            self.last_opcode_gas_remaining = Some((opcode, interp.gas.remaining()));
+            self.last_opcode_gas_remaining = Some((opcode, interp.control.gas().remaining()));
         }
     }
 
     fn step_end(&mut self, interp: &mut Interpreter, _context: &mut CTX) {
         // update gas usage for the last opcode
         if let Some((opcode, gas_remaining)) = self.last_opcode_gas_remaining.take() {
-            let gas_cost = gas_remaining.saturating_sub(interp.gas.remaining());
+            let gas_cost = gas_remaining.saturating_sub(interp.control.gas().remaining());
             *self.opcode_gas.entry(opcode).or_default() += gas_cost;
         }
     }
@@ -107,6 +107,9 @@ where
             CallScheme::CallCode => opcode::CALLCODE,
             CallScheme::DelegateCall => opcode::DELEGATECALL,
             CallScheme::StaticCall => opcode::STATICCALL,
+            CallScheme::ExtCall => opcode::CALL,
+            CallScheme::ExtStaticCall => opcode::STATICCALL,
+            CallScheme::ExtDelegateCall => opcode::DELEGATECALL,
         };
 
         self.subtract_gas_limit(opcode, inputs.gas_limit);
@@ -169,8 +172,10 @@ mod tests {
             ExtBytecode::new(bytecode),
             InputsImpl::default(),
             false,
+            false,
             SpecId::default(),
             u64::MAX,
+            1,
         );
         let db = CacheDB::new(EmptyDB::default());
 
@@ -199,8 +204,10 @@ mod tests {
             ExtBytecode::new(bytecode),
             InputsImpl::default(),
             false,
+            false,
             SpecId::default(),
             u64::MAX,
+            1,
         );
         let db = CacheDB::new(EmptyDB::default());
 
