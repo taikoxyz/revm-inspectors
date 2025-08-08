@@ -32,7 +32,7 @@ use revm::{
         CallInputs, CallOutcome, CallScheme, CreateInputs, CreateOutcome, Gas, InstructionResult,
         Interpreter, InterpreterResult,
     },
-    DatabaseRef, Inspector,
+    Database, DatabaseRef, Inspector,
 };
 
 pub(crate) mod bindings;
@@ -406,7 +406,8 @@ impl JsInspector {
 
 impl<CTX> Inspector<CTX> for JsInspector
 where
-    CTX: ContextTr<Journal: JournalExt, Db: DatabaseRef>,
+    CTX: ContextTr<Journal: JournalExt>,
+    <CTX as ContextTr>::Db: DatabaseRef + Database,
 {
     fn step(&mut self, interp: &mut Interpreter, context: &mut CTX) {
         if self.step_fn.is_none() {
@@ -716,9 +717,11 @@ mod tests {
 
         let insp = JsInspector::new(code.to_string(), serde_json::Value::Null).unwrap();
 
+        let mut multi_db = revm::database::MultiCacheDB::new();
+        multi_db.add_chain(1, db);
         let mut evm = revm::Context::mainnet()
             .modify_cfg_chained(|cfg| cfg.spec = SpecId::CANCUN)
-            .with_db(db)
+            .with_db(multi_db)
             .build_mainnet_with_inspector(insp);
 
         let res = evm
