@@ -1,6 +1,5 @@
 //! Transfer tests
 
-use crate::utils::chain_address;
 use alloy_primitives::{hex, Address, U256};
 use revm::{
     context::TxEnv,
@@ -8,12 +7,13 @@ use revm::{
         result::{ExecutionResult, Output},
         ContextTr, TransactTo,
     },
-    database::CacheDB,
-    database_interface::EmptyDB,
+    database::MultiCacheDB,
+    database_interface::{EmptyDB, MultiChainDatabaseCommit},
     handler::EvmTr,
     inspector::InspectorEvmTr,
-    primitives::hardfork::SpecId,
-    Context, DatabaseCommit, InspectEvm, MainBuilder, MainContext,
+    primitives::{hardfork::SpecId, ChainAddress},
+    state::AccountInfo,
+    Context, InspectEvm, MainBuilder, MainContext,
 };
 use revm_inspectors::{
     tracing::{TracingInspector, TracingInspectorConfig},
@@ -34,13 +34,14 @@ fn test_internal_transfers() {
     let code = hex!("608060405234801561001057600080fd5b5060ef8061001f6000396000f3fe608060405260043610601c5760003560e01c8063830c29ae146021575b600080fd5b6030602c366004608b565b6032565b005b600080826001600160a01b03163460405160006040518083038185875af1925050503d8060008114607e576040519150601f19603f3d011682016040523d82523d6000602084013e6083565b606091505b505050505050565b600060208284031215609c57600080fd5b81356001600160a01b038116811460b257600080fd5b939250505056fea26469706673582212201654bdbf09c088897c9b02f3ba9df280b136ef99c3a05ca5a21d9a10fd912d3364736f6c634300080d0033");
     let deployer = Address::ZERO;
 
-    let db = CacheDB::new(EmptyDB::default());
+    let mut multi_db = MultiCacheDB::new();
+    multi_db.add_chain(1, EmptyDB::default());
 
     let context = Context::mainnet()
-        .with_db(db)
+        .with_db(multi_db)
         .modify_cfg_chained(|c| c.spec = SpecId::LONDON)
         .with_tx(TxEnv {
-            caller: chain_address(deployer),
+            caller: ChainAddress(1, deployer),
             gas_limit: 1000000,
             kind: TransactTo::Create,
             data: code.into(),
@@ -59,13 +60,12 @@ fn test_internal_transfers() {
         },
         _ => panic!("Execution failed"),
     };
-    evm.ctx().db().commit(res.state);
+    evm.ctx().db().commit_multi(res.state);
 
-    let acc = evm.ctx().db().load_account(deployer).unwrap();
-    acc.info.balance = U256::from(u64::MAX);
+    evm.ctx().db().get_chain_mut(1).unwrap().insert_account_info(deployer, AccountInfo { balance: U256::from(u64::MAX), ..Default::default() });
 
     let tx_env = TxEnv {
-        caller: chain_address(deployer),
+        caller: ChainAddress(1, deployer),
         gas_limit: 100000000,
         kind: TransactTo::Call(addr),
         data: hex!("830c29ae0000000000000000000000000000000000000000000000000000000000000000")
@@ -76,9 +76,9 @@ fn test_internal_transfers() {
     };
 
     let mut evm = evm.with_inspector(TransferInspector::new(false));
-    evm.ctx().modify_tx(|tx| {
-        *tx = tx_env.clone();
-        tx.nonce = 1;
+    evm.set_tx(TxEnv {
+        nonce: 1,
+        ..tx_env
     });
     let res = evm.inspect_replay().unwrap();
     assert!(res.result.is_success());
@@ -104,9 +104,9 @@ fn test_internal_transfers() {
     );
 
     let mut evm = evm.with_inspector(TransferInspector::internal_only());
-    evm.ctx().modify_tx(|tx| {
-        *tx = tx_env.clone();
-        tx.nonce = 1;
+    evm.set_tx(TxEnv {
+        nonce: 1,
+        ..tx_env
     });
     let res = evm.inspect_replay().unwrap();
     assert!(res.result.is_success());

@@ -100,6 +100,7 @@ impl TransferInspector {
 impl<CTX> Inspector<CTX> for TransferInspector
 where
     CTX: ContextTr,
+    <CTX as ContextTr>::Db: Database,
 {
     fn call(&mut self, context: &mut CTX, inputs: &mut CallInputs) -> Option<CallOutcome> {
         if let Some(value) = inputs.transfer_value() {

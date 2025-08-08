@@ -1,10 +1,9 @@
 //! Accesslist tests
 
-use crate::utils::chain_address;
 use alloy_primitives::{address, hex};
 use revm::{
-    bytecode::Bytecode, context::TxEnv, context_interface::TransactTo, database::CacheDB,
-    database_interface::EmptyDB, handler::EvmTr, state::AccountInfo, Context, InspectEvm,
+    bytecode::Bytecode, context::TxEnv, context_interface::TransactTo, database::MultiCacheDB,
+    database_interface::EmptyDB, handler::EvmTr, primitives::ChainAddress, state::AccountInfo, Context, InspectEvm,
     MainBuilder, MainContext,
 };
 use revm_inspectors::access_list::AccessListInspector;
@@ -24,26 +23,24 @@ fn test_access_list_precompile() {
     let account = address!("341348115259a8bf69f1f50101c227fced83bac6");
     let caller = address!("341348115259a8bf69f1f50101c227fced83bac5");
 
-    let context =
-        Context::mainnet().with_db(CacheDB::<EmptyDB>::default()).modify_db_chained(|db| {
-            db.insert_account_info(
-                account,
-                AccountInfo { code: Some(Bytecode::new_raw(code.into())), ..Default::default() },
-            );
-        });
+    let mut multi_db = MultiCacheDB::<EmptyDB>::new();
+    multi_db.add_chain(1, EmptyDB::default());
+    multi_db.get_chain_mut(1).unwrap().insert_account_info(
+        account,
+        AccountInfo { code: Some(Bytecode::new_raw(code.into())), ..Default::default() },
+    );
 
+    let context = Context::mainnet().with_db(multi_db);
     let mut evm = context.build_mainnet();
 
-    evm.ctx().modify_tx(|tx| {
-        *tx = TxEnv {
-            caller: chain_address(caller),
-            gas_limit: 1000000,
-            kind: TransactTo::Call(account),
-            data: hex!("a5399705").into(),
-            nonce: 0,
-            ..Default::default()
-        }
-    });
+    evm.ctx().tx = TxEnv {
+        caller: ChainAddress(1, caller),
+        gas_limit: 1000000,
+        kind: TransactTo::Call(account),
+        data: hex!("a5399705").into(),
+        nonce: 0,
+        ..Default::default()
+    };
     let mut accesslist = AccessListInspector::default();
     let mut evm = evm.with_inspector(&mut accesslist);
     let res = evm.inspect_replay().unwrap();

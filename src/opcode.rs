@@ -123,8 +123,10 @@ mod tests {
             u64::MAX,
         );
         let db = CacheDB::new(EmptyDB::default());
+        let mut multi_db = revm::database::SimpleMultiChainDB::new();
+        multi_db.add_chain(1, db); // Chain ID 1 for mainnet
 
-        let mut context = Context::mainnet().with_db(db);
+        let mut context = Context::mainnet().with_db(multi_db);
         for _ in &opcodes {
             opcode_counter.step(&mut interpreter, &mut context);
         }
@@ -154,8 +156,10 @@ mod tests {
             u64::MAX,
         );
         let db = CacheDB::new(EmptyDB::default());
+        let mut multi_db = revm::database::SimpleMultiChainDB::new();
+        multi_db.add_chain(1, db); // Chain ID 1 for mainnet
 
-        let mut context = Context::mainnet().with_db(db);
+        let mut context = Context::mainnet().with_db(multi_db);
         for _ in opcodes.iter() {
             opcode_counter.step(&mut interpreter, &mut context);
         }
