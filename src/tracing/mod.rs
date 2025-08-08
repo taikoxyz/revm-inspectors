@@ -510,7 +510,7 @@ impl TracingInspector {
             step.storage_change = match (op, journal_entry) {
                 (
                     opcode::SLOAD | opcode::SSTORE,
-                    Some(JournalEntry::StorageChange { address, key, had_value }),
+                    Some(JournalEntry::StorageChanged { address, key, had_value }),
                 ) => {
                     // SAFETY: (Address,key) exists if part if StorageChange
                     let value =
