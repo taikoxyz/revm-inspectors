@@ -2,7 +2,7 @@
 
 use alloy_primitives::{address, hex};
 use revm::{
-    bytecode::Bytecode, context::TxEnv, context_interface::TransactTo, database::MultiCacheDB,
+    bytecode::Bytecode, context::{TxEnv, TxKind}, database::MultiCacheDB,
     database_interface::EmptyDB, handler::EvmTr, primitives::ChainAddress, state::AccountInfo, Context, InspectEvm,
     MainBuilder, MainContext,
 };
@@ -36,7 +36,7 @@ fn test_access_list_precompile() {
     evm.ctx().tx = TxEnv {
         caller: ChainAddress(1, caller),
         gas_limit: 1000000,
-        kind: TransactTo::Call(account),
+        kind: TxKind::Call(ChainAddress(1, account)),
         data: hex!("a5399705").into(),
         nonce: 0,
         ..Default::default()

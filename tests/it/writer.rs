@@ -3,8 +3,9 @@ use alloy_primitives::{address, b256, bytes, hex, Address, B256, U256};
 use alloy_sol_types::{sol, SolCall};
 use colorchoice::ColorChoice;
 use revm::{
-    context_interface::TransactTo, database::MultiCacheDB, database_interface::EmptyDB, handler::EvmTr,
-    inspector::InspectorEvmTr, primitives::hardfork::SpecId, Context, InspectCommitEvm, InspectEvm,
+    context::TxKind,
+    database::MultiCacheDB, database_interface::EmptyDB, handler::EvmTr,
+    inspector::InspectorEvmTr, primitives::{hardfork::SpecId, ChainAddress}, Context, InspectCommitEvm, InspectEvm,
     MainBuilder, MainContext,
 };
 use revm_inspectors::tracing::{
@@ -48,7 +49,7 @@ fn test_trace_printing() {
 
     let mut call = |data: Vec<u8>| {
         evm.ctx().tx.data = data.into();
-        evm.ctx().tx.kind = TransactTo::Call(address);
+        evm.ctx().tx.kind = TxKind::Call(ChainAddress(1, address));
         evm.ctx().tx.gas_priority_fee = None;
         evm.ctx().tx.nonce = index as u64;
         evm.set_inspector(TracingInspector::new(TracingInspectorConfig::all()));

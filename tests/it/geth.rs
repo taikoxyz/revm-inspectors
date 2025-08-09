@@ -7,8 +7,8 @@ use alloy_rpc_types_trace::geth::{
     GethTrace, PreStateConfig, PreStateFrame,
 };
 use revm::{
-    context::{ContextSetters, TxEnv},
-    context_interface::{ContextTr, TransactTo},
+    context::{ContextSetters, TxEnv, TxKind},
+    context_interface::ContextTr,
     database::MultiCacheDB,
     database_interface::EmptyDB,
     handler::EvmTr,
@@ -67,7 +67,7 @@ fn test_geth_calltracer_logs() {
     evm.set_tx(TxEnv {
         caller: ChainAddress(1, deployer),
         gas_limit: 1000000,
-        kind: TransactTo::Call(addr),
+        kind: TxKind::Call(ChainAddress(1, addr)),
         data: Bytes::default(), // call fallback
         nonce: 1,
         ..Default::default()
@@ -175,7 +175,7 @@ fn test_geth_mux_tracer() {
     evm.ctx().set_tx(TxEnv {
         caller: ChainAddress(1, deployer),
         gas_limit: 1000000,
-        kind: TransactTo::Call(addr),
+        kind: TxKind::Call(ChainAddress(1, addr)),
         data: Bytes::default(), // call fallback
         nonce: 1,
         ..Default::default()
@@ -257,7 +257,7 @@ fn test_geth_inspector_reset() {
             tx.caller = ChainAddress(1, Address::ZERO);
             tx.gas_limit = 1000000;
             tx.gas_price = Default::default();
-            tx.kind = TransactTo::Call(Address::ZERO);
+            tx.kind = TxKind::Call(ChainAddress(1, Address::ZERO));
         });
 
     assert_eq!(insp.traces().nodes().first().unwrap().trace.gas_limit, 0);

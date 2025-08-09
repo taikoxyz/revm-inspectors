@@ -1,10 +1,9 @@
 use alloy_primitives::{Address, Bytes};
 use colorchoice::ColorChoice;
 use revm::{
-    context::{BlockEnv, CfgEnv, Evm, TxEnv},
+    context::{BlockEnv, CfgEnv, Evm, TxEnv, TxKind},
     context_interface::{
         result::{ExecutionResult, HaltReason},
-        TransactTo,
     },
     database_interface::{MultiChainDatabase, MultiChainDatabaseCommit},
     handler::{instructions::EthInstructions, EthPrecompiles, EvmTr},
@@ -44,7 +43,7 @@ pub fn deploy_contract<DB: MultiChainDatabase + MultiChainDatabaseCommit>(
 ) -> ExecutionResult<HaltReason> {
     evm.ctx().tx.caller = ChainAddress(1, deployer);
     evm.ctx().tx.gas_limit = 1000000;
-    evm.ctx().tx.kind = TransactTo::Create;
+    evm.ctx().tx.kind = TxKind::Create;
     evm.ctx().tx.data = code;
     evm.ctx().cfg.spec = spec;
 
@@ -64,7 +63,7 @@ pub fn inspect_deploy_contract<DB: MultiChainDatabase + MultiChainDatabaseCommit
     evm.ctx().tx = TxEnv {
         caller: ChainAddress(1, deployer),
         gas_limit: 1000000,
-        kind: TransactTo::Create,
+        kind: TxKind::Create,
         data: code,
         ..Default::default()
     };

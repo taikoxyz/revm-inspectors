@@ -7,10 +7,10 @@ use alloy_rpc_types_trace::parity::{
     Action, CallAction, CallType, CreationMethod, SelfdestructAction, TraceType,
 };
 use revm::{
-    context::{ContextSetters, TxEnv},
+    context::{ContextSetters, TxEnv, TxKind},
     context_interface::{
         result::{ExecutionResult, Output},
-        ContextTr, TransactTo,
+        ContextTr,
     },
     database::MultiCacheDB,
     database_interface::{EmptyDB, MultiChainDatabaseCommit},
@@ -53,7 +53,7 @@ fn test_parity_selfdestruct(spec_id: SpecId) {
     let mut multi_db = MultiCacheDB::new();
     multi_db.add_chain(1, EmptyDB::default());
     multi_db.get_chain_mut(1).unwrap().insert_account_info(deployer, AccountInfo { balance: value, ..Default::default() });
-    let mut context = Context::mainnet().with_db(multi_db).modify_tx_chained(|tx| tx.value = value);
+    let context = Context::mainnet().with_db(multi_db).modify_tx_chained(|tx| tx.value = value);
     let mut evm = context.build_mainnet();
     let output = deploy_contract(&mut evm, code.into(), deployer, spec_id);
     let addr = output.created_address().unwrap();
@@ -61,7 +61,7 @@ fn test_parity_selfdestruct(spec_id: SpecId) {
     evm.set_tx(TxEnv {
         caller: ChainAddress(1, deployer),
         gas_limit: 1000000,
-        kind: TransactTo::Call(addr),
+        kind: TxKind::Call(ChainAddress(1, addr)),
         data: hex!("43d726d6").into(),
         nonce: 1,
         ..Default::default()
@@ -138,7 +138,7 @@ fn test_parity_constructor_selfdestruct() {
                 TxEnv {
                     caller: ChainAddress(1, deployer),
                     gas_limit: 1000000,
-                    kind: TransactTo::Call(addr),
+                    kind: TxKind::Call(ChainAddress(1, addr)),
                     data: hex!("43d726d6").into(),
                     nonce: 1,
                     ..Default::default()
@@ -198,7 +198,7 @@ fn test_parity_call_selfdestruct() {
     evm.set_tx(TxEnv {
         caller: ChainAddress(1, caller),
         gas_limit: 100000000,
-        kind: TransactTo::Call(to),
+        kind: TxKind::Call(ChainAddress(1, to)),
         data: input.to_vec().into(),
         nonce: 0,
         ..Default::default()
@@ -267,7 +267,7 @@ fn test_parity_call_selfdestruct_create() {
     evm.set_tx(TxEnv {
         caller: ChainAddress(1, caller),
         gas_limit: 100000000,
-        kind: TransactTo::Create,
+        kind: TxKind::Create,
         data: code.to_vec().into(),
         nonce: 24,
         value: U256::from(1),
@@ -342,7 +342,7 @@ fn test_parity_statediff_blob_commit() {
         .with_tx(TxEnv {
             caller: ChainAddress(1, caller),
             gas_limit: 1000000,
-            kind: TransactTo::Call(to),
+            kind: TxKind::Call(ChainAddress(1, to)),
             gas_price: 150,
             blob_hashes: vec!["0x01af2fd94f17364bc8ef371c4c90c3a33855ff972d10b9c03d0445b3fca063ea"
                 .parse()
@@ -414,7 +414,7 @@ fn test_parity_delegatecall_selfdestruct() {
     evm.set_tx(TxEnv {
         caller: ChainAddress(1, deployer),
         gas_limit: 1000000,
-        kind: TransactTo::Call(delegate_addr),
+        kind: TxKind::Call(ChainAddress(1, delegate_addr)),
         data: input_data.into(),
         nonce: 0,
         ..Default::default()

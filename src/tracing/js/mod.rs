@@ -32,6 +32,7 @@ use revm::{
         CallInputs, CallOutcome, CallScheme, CreateInputs, CreateOutcome, Gas, InstructionResult,
         Interpreter, InterpreterResult,
     },
+    primitives::ChainAddress,
     Database, DatabaseRef, Inspector,
 };
 
@@ -431,8 +432,8 @@ where
             refund: interp.control.gas().refunded() as u64,
             error: None,
             contract: Contract {
-                caller: interp.input.caller_address,
-                contract: interp.input.target_address,
+                caller: interp.input.caller_address.1,
+                contract: interp.input.target_address.1,
                 value: active_call.contract.value,
                 input: active_call.contract.input.clone(),
             },
@@ -467,8 +468,8 @@ where
                 refund: interp.control.gas().refunded() as u64,
                 error: Some(format!("{:?}", interp.control.instruction_result())),
                 contract: Contract {
-                    caller: interp.input.caller_address,
-                    contract: interp.input.target_address,
+                    caller: interp.input.caller_address.1,
+                    contract: interp.input.target_address.1,
                     value: active_call.contract.value,
                     input: active_call.contract.input.clone(),
                 },
@@ -493,11 +494,11 @@ where
 
         let value = inputs.transfer_value().unwrap_or_default();
         self.push_call(
-            contract,
+            contract.1,
             inputs.input_data(context),
             value,
             inputs.scheme.into(),
-            caller,
+            caller.1,
             inputs.gas_limit,
         );
 
@@ -537,7 +538,7 @@ where
     fn create(&mut self, context: &mut CTX, inputs: &mut CreateInputs) -> Option<CreateOutcome> {
         self.register_precompiles(context);
 
-        let nonce = context.journal().load_account(inputs.caller).unwrap().info.nonce;
+        let nonce = context.journal().load_account(ChainAddress(1, inputs.caller)).unwrap().info.nonce;
         let contract = inputs.created_address(nonce);
         self.push_call(
             contract,
@@ -656,10 +657,11 @@ mod tests {
     use alloy_primitives::{hex, Address};
     use revm::{
         context::TxEnv,
-        database::CacheDB,
+        context_interface::TransactTo,
+        database::{CacheDB, MultiCacheDB},
         database_interface::EmptyDB,
         inspector::InspectorEvmTr,
-        primitives::hardfork::SpecId,
+        primitives::{hardfork::SpecId, ChainAddress},
         state::{AccountInfo, Bytecode},
         InspectEvm, MainBuilder, MainContext,
     };

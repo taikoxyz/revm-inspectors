@@ -3,8 +3,8 @@
 use crate::utils::deploy_contract;
 use alloy_primitives::{address, hex, Address};
 use revm::{
-    context::TxEnv,
-    context_interface::{ContextTr, TransactTo},
+    context::{TxEnv, TxKind},
+    context_interface::ContextTr,
     database::MultiCacheDB,
     database_interface::EmptyDB,
     inspector::InspectorEvmTr,
@@ -58,7 +58,7 @@ fn test_geth_jstracer_revert() {
         .inspect_with_tx(TxEnv {
             caller: ChainAddress(1, deployer),
             gas_limit: 1000000,
-            kind: TransactTo::Call(addr),
+            kind: TxKind::Call(ChainAddress(1, addr)),
             data: hex!("c2985578").into(), // call foo
             nonce: 1,
             ..Default::default()
@@ -79,7 +79,7 @@ fn test_geth_jstracer_revert() {
         .inspect_with_tx(TxEnv {
             caller: ChainAddress(1, deployer),
             gas_limit: 1000000,
-            kind: TransactTo::Call(addr),
+            kind: TxKind::Call(ChainAddress(1, addr)),
             data: hex!("febb0f7e").into(), // call bar
             nonce: 1,
             ..Default::default()

@@ -23,7 +23,7 @@ use revm::{
         CallInput, CallInputs, CallOutcome, CallScheme, CreateInputs, CreateOutcome,
         InstructionResult, Interpreter, InterpreterResult,
     },
-    primitives::{hardfork::SpecId, Address, Bytes, Log, B256, U256},
+    primitives::{hardfork::SpecId, Address, Bytes, ChainAddress, Log, B256, U256},
     Inspector, JournalEntry,
 };
 
@@ -249,10 +249,10 @@ impl TracingInspector {
     fn is_precompile_call<CTX: ContextTr<Journal: JournalExt>>(
         &self,
         context: &CTX,
-        to: &Address,
+        to: &ChainAddress,
         value: &U256,
     ) -> bool {
-        if context.journal_ref().precompile_addresses().contains(to) {
+        if context.journal_ref().precompile_addresses().contains(&to.1) {
             // only if this is _not_ the root call
             return self.is_deep() && value.is_zero();
         }
@@ -306,11 +306,11 @@ impl TracingInspector {
     fn start_trace_on_call<CTX: ContextTr>(
         &mut self,
         context: &mut CTX,
-        address: Address,
+        address: ChainAddress,
         input_data: Bytes,
         value: U256,
         kind: CallKind,
-        caller: Address,
+        caller: ChainAddress,
         gas_limit: u64,
         maybe_precompile: Option<bool>,
     ) {
@@ -328,12 +328,12 @@ impl TracingInspector {
             push_kind,
             CallTrace {
                 depth: context.journal().depth(),
-                address,
+                address: address.1,
                 kind,
                 data: input_data,
                 value,
                 status: InstructionResult::Continue,
-                caller,
+                caller: caller.1,
                 maybe_precompile,
                 gas_limit,
                 ..Default::default()
@@ -453,7 +453,7 @@ impl TracingInspector {
             pc: interp.bytecode.pc(),
             code_section_idx: interp.sub_routine.routine_idx(),
             op,
-            contract: interp.input.target_address(),
+            contract: interp.input.target_address().1,
             stack,
             push_stack: None,
             memory,
@@ -611,15 +611,15 @@ where
     }
 
     fn create(&mut self, context: &mut CTX, inputs: &mut CreateInputs) -> Option<CreateOutcome> {
-        let _ = context.journal().load_account(inputs.caller);
-        let nonce = context.journal().load_account(inputs.caller).ok()?.info.nonce;
+        let _ = context.journal().load_account(ChainAddress(1, inputs.caller));
+        let nonce = context.journal().load_account(ChainAddress(1, inputs.caller)).ok()?.info.nonce;
         self.start_trace_on_call(
             context,
-            inputs.created_address(nonce),
+            ChainAddress(1, inputs.created_address(nonce)),
             inputs.init_code.clone(),
             inputs.value,
             inputs.scheme.into(),
-            inputs.caller,
+            ChainAddress(1, inputs.caller),
             inputs.gas_limit,
             Some(false),
         );

@@ -2,13 +2,13 @@
 
 use alloy_primitives::{hex, Address, U256};
 use revm::{
-    context::TxEnv,
+    context::{TxEnv, TxKind},
     context_interface::{
         result::{ExecutionResult, Output},
-        ContextTr, TransactTo,
+        ContextTr,
     },
     database::MultiCacheDB,
-    database_interface::{EmptyDB, MultiChainDatabase, MultiChainDatabaseCommit},
+    database_interface::{EmptyDB, MultiChainDatabaseCommit},
     handler::EvmTr,
     inspector::InspectorEvmTr,
     primitives::{hardfork::SpecId, ChainAddress},
@@ -44,7 +44,7 @@ fn test_edge_coverage() {
         .with_tx(TxEnv {
             caller: ChainAddress(1, deployer),
             gas_limit: 1000000,
-            kind: TransactTo::Create,
+            kind: TxKind::Create,
             data: code.into(),
             ..Default::default()
         })
@@ -71,7 +71,7 @@ fn test_edge_coverage() {
     let tx = TxEnv {
         caller: ChainAddress(1, deployer),
         gas_limit: 100000000,
-        kind: TransactTo::Call(addr),
+        kind: TxKind::Call(ChainAddress(1, addr)),
         nonce: 1,
         // 'cast cd "Y(bool)" true'
         data: hex!("f42e8cdd0000000000000000000000000000000000000000000000000000000000000001")
@@ -93,7 +93,7 @@ fn test_edge_coverage() {
     evm.set_tx(TxEnv {
         caller: ChainAddress(1, deployer),
         gas_limit: 100000000,
-        kind: TransactTo::Call(addr),
+        kind: TxKind::Call(ChainAddress(1, addr)),
         nonce: 1,
         // 'cast cd "Y(bool)" false'
         data: hex!("f42e8cdd0000000000000000000000000000000000000000000000000000000000000000")

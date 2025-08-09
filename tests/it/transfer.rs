@@ -3,22 +3,16 @@
 use alloy_primitives::{hex, Address, U256};
 use revm::{
     context::TxEnv,
-    context_interface::{
-        result::{ExecutionResult, Output},
-        ContextTr, TransactTo,
-    },
+    context::TxKind,
     database::MultiCacheDB,
-    database_interface::{EmptyDB, MultiChainDatabaseCommit},
-    handler::EvmTr,
-    inspector::InspectorEvmTr,
+    database_interface::EmptyDB,
     primitives::{hardfork::SpecId, ChainAddress},
     state::AccountInfo,
-    Context, InspectEvm, MainBuilder, MainContext,
+    Context, ExecuteEvm, InspectCommitEvm, MainBuilder, MainContext,
 };
-use revm_inspectors::{
-    tracing::{TracingInspector, TracingInspectorConfig},
-    transfer::{TransferInspector, TransferKind, TransferOperation},
-};
+use revm_inspectors::transfer::{TransferInspector, TransferKind, TransferOperation};
+
+use crate::utils::deploy_contract;
 
 #[test]
 fn test_internal_transfers() {
@@ -36,88 +30,103 @@ fn test_internal_transfers() {
 
     let mut multi_db = MultiCacheDB::new();
     multi_db.add_chain(1, EmptyDB::default());
+    
+    // Insert deployer account with balance first
+    multi_db.get_chain_mut(1).unwrap().insert_account_info(deployer, AccountInfo { balance: U256::from(u64::MAX), ..Default::default() });
 
-    let context = Context::mainnet()
+    let mut evm = Context::mainnet()
         .with_db(multi_db)
-        .modify_cfg_chained(|c| c.spec = SpecId::LONDON)
-        .with_tx(TxEnv {
-            caller: ChainAddress(1, deployer),
-            gas_limit: 1000000,
-            kind: TransactTo::Create,
-            data: code.into(),
-            ..Default::default()
-        });
+        .build_mainnet();
 
-    let mut insp = TracingInspector::new(TracingInspectorConfig::default_geth());
+    // Deploy contract using utility function
+    let res = deploy_contract(&mut evm, code.into(), deployer, SpecId::LONDON);
+    assert!(res.is_success(), "Contract deployment failed: {:?}", res);
+    let addr = res.created_address().unwrap();
+    println!("Deployed contract to address: {:?}", addr);
 
-    // Create contract
-    let mut evm = context.build_mainnet_with_inspector(&mut insp);
-    let res = evm.inspect_replay().unwrap();
-    let addr = match res.result {
-        ExecutionResult::Success { output, .. } => match output {
-            Output::Create(_, addr) => addr.unwrap(),
-            _ => panic!("Create failed"),
-        },
-        _ => panic!("Execution failed"),
-    };
-    evm.ctx().db().commit_multi(res.state);
-
-    evm.ctx().db().get_chain_mut(1).unwrap().insert_account_info(deployer, AccountInfo { balance: U256::from(u64::MAX), ..Default::default() });
-
-    let tx_env = TxEnv {
+    // First test: with all transfers
+    let mut transfer_inspector = TransferInspector::new(false);
+    evm.ctx.tx = TxEnv {
         caller: ChainAddress(1, deployer),
         gas_limit: 100000000,
-        kind: TransactTo::Call(addr),
+        kind: TxKind::Call(ChainAddress(1, addr)),
         data: hex!("830c29ae0000000000000000000000000000000000000000000000000000000000000000")
             .into(),
         value: U256::from(10),
-        nonce: 0,
+        nonce: 1,
         ..Default::default()
     };
+    evm.ctx.cfg.spec = SpecId::LONDON;
+    let res = evm.with_inspector(&mut transfer_inspector).inspect_replay_commit().unwrap();
+    assert!(res.is_success());
 
-    let mut evm = evm.with_inspector(TransferInspector::new(false));
-    evm.set_tx(TxEnv {
-        nonce: 1,
-        ..tx_env
-    });
-    let res = evm.inspect_replay().unwrap();
-    assert!(res.result.is_success());
-
-    assert_eq!(evm.inspector().transfers().len(), 2);
+    assert_eq!(transfer_inspector.transfers().len(), 2);
     assert_eq!(
-        evm.inspector().transfers()[0],
+        transfer_inspector.transfers()[0],
         TransferOperation {
             kind: TransferKind::Call,
-            from: deployer,
-            to: addr,
+            from: ChainAddress(1, deployer),
+            to: ChainAddress(1, addr),
             value: U256::from(10),
         }
     );
     assert_eq!(
-        evm.inspector().transfers()[1],
+        transfer_inspector.transfers()[1],
         TransferOperation {
             kind: TransferKind::Call,
-            from: addr,
-            to: deployer,
+            from: ChainAddress(1, addr),
+            to: ChainAddress(1, deployer),
             value: U256::from(10),
         }
     );
 
-    let mut evm = evm.with_inspector(TransferInspector::internal_only());
-    evm.set_tx(TxEnv {
+    // Second test: with internal transfers only
+    // Since evm was consumed, we need to create a new one with the database
+    // that has the deployed contract
+    let mut internal_inspector = TransferInspector::internal_only();
+    
+    // Get the database from the original evm's journal
+    // Actually, we can't access it after with_inspector consumed it
+    // So let's just run the second test without creating a new evm
+    // We'll use a different contract call to test internal_only
+    
+    // Deploy and call the contract again for the internal_only test
+    let mut multi_db2 = MultiCacheDB::new();
+    multi_db2.add_chain(1, EmptyDB::default());
+    multi_db2.get_chain_mut(1).unwrap().insert_account_info(deployer, AccountInfo { balance: U256::from(u64::MAX), ..Default::default() });
+    
+    let mut evm2 = Context::mainnet()
+        .with_db(multi_db2)
+        .build_mainnet();
+    
+    // Deploy contract again
+    let res2 = deploy_contract(&mut evm2, code.into(), deployer, SpecId::LONDON);
+    assert!(res2.is_success(), "Second contract deployment failed: {:?}", res2);
+    let addr2 = res2.created_address().unwrap();
+    println!("Deployed second contract to address: {:?}", addr2);
+    
+    // Set up transaction for internal_only test
+    evm2.ctx.tx = TxEnv {
+        caller: ChainAddress(1, deployer),
+        gas_limit: 100000000,
+        kind: TxKind::Call(ChainAddress(1, addr2)),
+        data: hex!("830c29ae0000000000000000000000000000000000000000000000000000000000000000")
+            .into(),
+        value: U256::from(10),
         nonce: 1,
-        ..tx_env
-    });
-    let res = evm.inspect_replay().unwrap();
-    assert!(res.result.is_success());
+        ..Default::default()
+    };
+    evm2.ctx.cfg.spec = SpecId::LONDON;
+    let res = evm2.with_inspector(&mut internal_inspector).inspect_replay_commit().unwrap();
+    assert!(res.is_success());
 
-    assert_eq!(evm.inspector().transfers().len(), 1);
+    assert_eq!(internal_inspector.transfers().len(), 1);
     assert_eq!(
-        evm.inspector().transfers()[0],
+        internal_inspector.transfers()[0],
         TransferOperation {
             kind: TransferKind::Call,
-            from: addr,
-            to: deployer,
+            from: ChainAddress(1, addr2),
+            to: ChainAddress(1, deployer),
             value: U256::from(10),
         }
     );

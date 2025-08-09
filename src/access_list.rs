@@ -119,7 +119,7 @@ where
         match interp.bytecode.opcode() {
             opcode::SLOAD | opcode::SSTORE => {
                 if let Ok(slot) = interp.stack.peek(0) {
-                    let cur_contract = interp.input.target_address();
+                    let cur_contract = interp.input.target_address().1;
                     self.touched_slots
                         .entry(cur_contract)
                         .or_default()

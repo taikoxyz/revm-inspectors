@@ -121,6 +121,7 @@ mod tests {
             false,
             SpecId::default(),
             u64::MAX,
+            1, // chain_id
         );
         let db = CacheDB::new(EmptyDB::default());
         let mut multi_db = revm::database::SimpleMultiChainDB::new();
@@ -154,6 +155,7 @@ mod tests {
             false,
             SpecId::default(),
             u64::MAX,
+            1, // chain_id
         );
         let db = CacheDB::new(EmptyDB::default());
         let mut multi_db = revm::database::SimpleMultiChainDB::new();
