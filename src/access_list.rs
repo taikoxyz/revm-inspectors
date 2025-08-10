@@ -107,7 +107,10 @@ impl AccessListInspector {
         // 7702 authorities should be excluded because those get loaded anyway
         let auth_addrs = context.tx().authorization_list().flat_map(|a| a.authority());
 
-        self.excluded = [from, to].into_iter().chain(precompiles).chain(auth_addrs).collect();
+        // Convert precompiles from HashSet<ChainAddress> to iterator of Address
+        let precompile_addrs = precompiles.into_iter().map(|ca| ca.1);
+        
+        self.excluded = [from, to].into_iter().chain(precompile_addrs).chain(auth_addrs).collect();
     }
 }
 

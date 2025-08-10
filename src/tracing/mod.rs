@@ -252,7 +252,7 @@ impl TracingInspector {
         to: &ChainAddress,
         value: &U256,
     ) -> bool {
-        if context.journal_ref().precompile_addresses().contains(&to.1) {
+        if context.journal_ref().precompile_addresses().contains(to) {
             // only if this is _not_ the root call
             return self.is_deep() && value.is_zero();
         }
@@ -611,15 +611,15 @@ where
     }
 
     fn create(&mut self, context: &mut CTX, inputs: &mut CreateInputs) -> Option<CreateOutcome> {
-        let _ = context.journal().load_account(ChainAddress(1, inputs.caller));
-        let nonce = context.journal().load_account(ChainAddress(1, inputs.caller)).ok()?.info.nonce;
+        let _ = context.journal().load_account(inputs.caller);
+        let nonce = context.journal().load_account(inputs.caller).ok()?.info.nonce;
         self.start_trace_on_call(
             context,
             ChainAddress(1, inputs.created_address(nonce)),
             inputs.init_code.clone(),
             inputs.value,
             inputs.scheme.into(),
-            ChainAddress(1, inputs.caller),
+            inputs.caller,
             inputs.gas_limit,
             Some(false),
         );

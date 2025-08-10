@@ -8,7 +8,7 @@ use revm::{
     database_interface::EmptyDB,
     primitives::{hardfork::SpecId, ChainAddress},
     state::AccountInfo,
-    Context, ExecuteEvm, InspectCommitEvm, MainBuilder, MainContext,
+    Context, InspectCommitEvm, MainBuilder, MainContext,
 };
 use revm_inspectors::transfer::{TransferInspector, TransferKind, TransferOperation};
 

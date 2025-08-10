@@ -32,7 +32,6 @@ use revm::{
         CallInputs, CallOutcome, CallScheme, CreateInputs, CreateOutcome, Gas, InstructionResult,
         Interpreter, InterpreterResult,
     },
-    primitives::ChainAddress,
     Database, DatabaseRef, Inspector,
 };
 
@@ -397,7 +396,12 @@ impl JsInspector {
         if !self.precompiles_registered {
             return;
         }
-        let precompiles = PrecompileList(context.journal().precompile_addresses().clone());
+        let precompiles = PrecompileList(
+            context.journal().precompile_addresses()
+                .iter()
+                .map(|ca| ca.1)
+                .collect()
+        );
 
         let _ = precompiles.register_callable(&mut self.ctx);
 
@@ -538,14 +542,14 @@ where
     fn create(&mut self, context: &mut CTX, inputs: &mut CreateInputs) -> Option<CreateOutcome> {
         self.register_precompiles(context);
 
-        let nonce = context.journal().load_account(ChainAddress(1, inputs.caller)).unwrap().info.nonce;
+        let nonce = context.journal().load_account(inputs.caller).unwrap().info.nonce;
         let contract = inputs.created_address(nonce);
         self.push_call(
             contract,
             inputs.init_code.clone(),
             inputs.value,
             inputs.scheme.into(),
-            inputs.caller,
+            inputs.caller.1,
             inputs.gas_limit,
         );
 

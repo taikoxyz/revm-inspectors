@@ -114,7 +114,7 @@ where
     }
 
     fn create(&mut self, context: &mut CTX, inputs: &mut CreateInputs) -> Option<CreateOutcome> {
-        let nonce = context.journal().load_account(ChainAddress(1, inputs.caller)).ok()?.data.info.nonce;
+        let nonce = context.journal().load_account(inputs.caller).ok()?.data.info.nonce;
         let address = ChainAddress(1, inputs.created_address(nonce));
 
         let kind = match inputs.scheme {
@@ -123,7 +123,7 @@ where
             CreateScheme::Custom { .. } => return None,
         };
 
-        self.on_transfer(ChainAddress(1, inputs.caller), address, inputs.value, kind, context.journal());
+        self.on_transfer(inputs.caller, address, inputs.value, kind, context.journal());
 
         None
     }
