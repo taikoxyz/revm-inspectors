@@ -12,7 +12,7 @@ use revm::{context::BlockEnv,
         result::{ExecutionResult, Output},
         ContextTr,
     },
-    database::MultiCacheDB,
+    database::{CacheDB, SimpleMultiChainDB},
     database_interface::{EmptyDB, MultiChainDatabaseCommit},
     handler::EvmTr,
     inspector::InspectorEvmTr,
@@ -50,8 +50,8 @@ fn test_parity_selfdestruct(spec_id: SpecId) {
     let deployer = address!("341348115259a8bf69f1f50101c227fced83bac6");
     let value = U256::from(69);
 
-    let mut multi_db = MultiCacheDB::new();
-    multi_db.add_chain(1, EmptyDB::default());
+    let mut multi_db = SimpleMultiChainDB::new();
+    multi_db.add_chain(1, CacheDB::new(EmptyDB::default()));
     multi_db.get_chain_mut(1).unwrap().insert_account_info(deployer, AccountInfo { balance: value, ..Default::default() });
     let context = Context::mainnet()
         .with_db(multi_db)
@@ -127,8 +127,8 @@ fn test_parity_constructor_selfdestruct() {
 
     let deployer = Address::ZERO;
 
-    let mut multi_db = MultiCacheDB::new();
-    multi_db.add_chain(1, EmptyDB::default());
+    let mut multi_db = SimpleMultiChainDB::new();
+    multi_db.add_chain(1, CacheDB::new(EmptyDB::default()));
     let mut evm = Context::mainnet()
         .with_db(multi_db)
         .modify_tx_chained(|tx| tx.caller = ChainAddress(1, deployer))
@@ -194,8 +194,8 @@ fn test_parity_call_selfdestruct() {
     let deployer = address!("341348115259a8bf69f1f50101c227fced83bac6");
     let value = U256::from(69);
 
-    let mut multi_db = MultiCacheDB::new();
-    multi_db.add_chain(1, EmptyDB::default());
+    let mut multi_db = SimpleMultiChainDB::new();
+    multi_db.add_chain(1, CacheDB::new(EmptyDB::default()));
     multi_db.get_chain_mut(1).unwrap().insert_account_info(deployer, AccountInfo { balance: value, ..Default::default() });
     let mut evm = Context::mainnet()
         .with_db(multi_db)
@@ -273,8 +273,8 @@ fn test_parity_call_selfdestruct_create() {
 
     let value = U256::from(1);
 
-    let mut multi_db = MultiCacheDB::new();
-    multi_db.add_chain(1, EmptyDB::default());
+    let mut multi_db = SimpleMultiChainDB::new();
+    multi_db.add_chain(1, CacheDB::new(EmptyDB::default()));
     multi_db.get_chain_mut(1).unwrap().insert_account_info(
         caller,
         AccountInfo { balance, nonce: 24, ..Default::default() },
@@ -354,8 +354,8 @@ fn test_parity_statediff_blob_commit() {
     let caller = address!("283b5b7d75e3e6b84b8e2161e8a468d733bbbe8d");
     let to = address!("15dd773dad3f630773a0e771e9b221f4c8b9b939");
 
-    let mut multi_db = MultiCacheDB::new();
-    multi_db.add_chain(1, EmptyDB::default());
+    let mut multi_db = SimpleMultiChainDB::new();
+    multi_db.add_chain(1, CacheDB::new(EmptyDB::default()));
     multi_db.get_chain_mut(1).unwrap().insert_account_info(
         caller,
         AccountInfo { balance: U256::from(u64::MAX), ..Default::default() },
@@ -429,8 +429,8 @@ fn test_parity_delegatecall_selfdestruct() {
 
     let deployer = address!("341348115259a8bf69f1f50101c227fced83bac6");
 
-    let mut multi_db = MultiCacheDB::new();
-    multi_db.add_chain(1, EmptyDB::default());
+    let mut multi_db = SimpleMultiChainDB::new();
+    multi_db.add_chain(1, CacheDB::new(EmptyDB::default()));
     let mut evm = Context::mainnet()
         .with_db(multi_db)
         .modify_block_chained(|blocks| {

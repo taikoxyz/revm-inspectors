@@ -2,7 +2,7 @@
 
 use alloy_primitives::{address, hex, B256};
 use revm::{
-    bytecode::Bytecode, context::{TxEnv, TxKind}, database::MultiCacheDB,
+    bytecode::Bytecode, context::{TxEnv, TxKind}, database::{CacheDB, SimpleMultiChainDB},
     database_interface::EmptyDB, handler::EvmTr, primitives::ChainAddress, state::AccountInfo, Context, InspectEvm,
     MainBuilder, MainContext,
 };
@@ -23,8 +23,8 @@ fn test_access_list_precompile() {
     let account = address!("341348115259a8bf69f1f50101c227fced83bac6");
     let caller = address!("341348115259a8bf69f1f50101c227fced83bac5");
 
-    let mut multi_db = MultiCacheDB::<EmptyDB>::new();
-    multi_db.add_chain(1, EmptyDB::default());
+    let mut multi_db = SimpleMultiChainDB::new();
+    multi_db.add_chain(1, CacheDB::new(EmptyDB::default()));
     multi_db.get_chain_mut(1).unwrap().insert_account_info(
         account,
         AccountInfo { code: Some(Bytecode::new_raw(code.into())), ..Default::default() },

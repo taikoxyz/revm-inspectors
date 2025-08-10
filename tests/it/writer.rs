@@ -4,7 +4,7 @@ use alloy_sol_types::{sol, SolCall};
 use colorchoice::ColorChoice;
 use revm::{
     context::TxKind,
-    database::MultiCacheDB, database_interface::EmptyDB, handler::EvmTr,
+    database::{CacheDB, SimpleMultiChainDB}, database_interface::EmptyDB, handler::EvmTr,
     inspector::InspectorEvmTr, primitives::{hardfork::SpecId, ChainAddress}, Context, InspectCommitEvm, InspectEvm,
     MainBuilder, MainContext,
 };
@@ -25,8 +25,8 @@ fn test_trace_printing() {
 
     let base_path = &Path::new(OUT_DIR).join("test_trace_printing");
 
-    let mut multi_db = MultiCacheDB::new();
-    multi_db.add_chain(1, EmptyDB::default());
+    let mut multi_db = SimpleMultiChainDB::new();
+    multi_db.add_chain(1, CacheDB::new(EmptyDB::default()));
     
     let mut evm = Context::mainnet()
         .with_db(multi_db)
@@ -103,8 +103,8 @@ fn test_trace_printing() {
 fn deploy_fail() {
     let base_path = &Path::new(OUT_DIR).join("deploy_fail");
 
-    let mut multi_db = MultiCacheDB::new();
-    multi_db.add_chain(1, EmptyDB::default());
+    let mut multi_db = SimpleMultiChainDB::new();
+    multi_db.add_chain(1, CacheDB::new(EmptyDB::default()));
 
     let mut evm = Context::mainnet()
         .with_db(multi_db)

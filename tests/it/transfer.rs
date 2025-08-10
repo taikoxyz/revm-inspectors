@@ -4,7 +4,7 @@ use alloy_primitives::{hex, Address, U256};
 use revm::{
     context::TxEnv,
     context::TxKind,
-    database::MultiCacheDB,
+    database::{CacheDB, SimpleMultiChainDB},
     database_interface::EmptyDB,
     primitives::{hardfork::SpecId, ChainAddress},
     state::AccountInfo,
@@ -28,8 +28,8 @@ fn test_internal_transfers() {
     let code = hex!("608060405234801561001057600080fd5b5060ef8061001f6000396000f3fe608060405260043610601c5760003560e01c8063830c29ae146021575b600080fd5b6030602c366004608b565b6032565b005b600080826001600160a01b03163460405160006040518083038185875af1925050503d8060008114607e576040519150601f19603f3d011682016040523d82523d6000602084013e6083565b606091505b505050505050565b600060208284031215609c57600080fd5b81356001600160a01b038116811460b257600080fd5b939250505056fea26469706673582212201654bdbf09c088897c9b02f3ba9df280b136ef99c3a05ca5a21d9a10fd912d3364736f6c634300080d0033");
     let deployer = Address::ZERO;
 
-    let mut multi_db = MultiCacheDB::new();
-    multi_db.add_chain(1, EmptyDB::default());
+    let mut multi_db = SimpleMultiChainDB::new();
+    multi_db.add_chain(1, CacheDB::new(EmptyDB::default()));
     
     // Insert deployer account with balance first
     multi_db.get_chain_mut(1).unwrap().insert_account_info(deployer, AccountInfo { balance: U256::from(u64::MAX), ..Default::default() });
@@ -91,8 +91,8 @@ fn test_internal_transfers() {
     // We'll use a different contract call to test internal_only
     
     // Deploy and call the contract again for the internal_only test
-    let mut multi_db2 = MultiCacheDB::new();
-    multi_db2.add_chain(1, EmptyDB::default());
+    let mut multi_db2 = SimpleMultiChainDB::new();
+    multi_db2.add_chain(1, CacheDB::new(EmptyDB::default()));
     multi_db2.get_chain_mut(1).unwrap().insert_account_info(deployer, AccountInfo { balance: U256::from(u64::MAX), ..Default::default() });
     
     let mut evm2 = Context::mainnet()

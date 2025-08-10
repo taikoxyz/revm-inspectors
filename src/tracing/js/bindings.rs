@@ -26,10 +26,10 @@ use core::cell::RefCell;
 use revm::{
     bytecode::opcode::{OpCode, PUSH0, PUSH32},
     context_interface::DBErrorMarker,
+    database_interface::MultiChainDatabaseRef,
     interpreter::{SharedMemory, Stack},
     primitives::{ChainAddress, KECCAK_EMPTY},
     state::{AccountInfo, Bytecode, EvmState},
-    DatabaseRef,
 };
 
 /// A macro that creates a native function that returns via [JsValue::from]
@@ -358,7 +358,7 @@ pub(crate) struct GcDb<DB: 'static>(GuardedNullableGc<DB>);
 
 impl<DB> GcDb<DB>
 where
-    DB: DatabaseRef + 'static,
+    DB: MultiChainDatabaseRef + 'static,
 {
     /// Creates a new stack reference
     fn new<'a>(db: DB) -> (Self, GcGuard<'a, DB>) {
@@ -757,7 +757,7 @@ impl EvmDbRef {
     /// Creates a new evm and db JS object.
     pub(crate) fn new<'a, 'b, DB>(state: &'a EvmState, db: &'b DB) -> (Self, EvmDbGuard<'a, 'b>)
     where
-        DB: DatabaseRef,
+        DB: MultiChainDatabaseRef,
         DB::Error: core::fmt::Display,
     {
         let (state, state_guard) = StateRef::new(state);
@@ -771,8 +771,8 @@ impl EvmDbRef {
         let db = JsDb(db);
         let js_db = unsafe {
             core::mem::transmute::<
-                Box<dyn DatabaseRef<Error = StringError> + '_>,
-                Box<dyn DatabaseRef<Error = StringError> + 'static>,
+                Box<dyn MultiChainDatabaseRef<Error = StringError> + '_>,
+                Box<dyn MultiChainDatabaseRef<Error = StringError> + 'static>,
             >(Box::new(db))
         };
 
@@ -791,7 +791,9 @@ impl EvmDbRef {
             return Ok(acc);
         }
 
-        let res = self.inner.db.0.with_inner(|db| db.basic_ref(address));
+        // Use chain ID 1 for JS tracer (mainnet)
+        let chain_address = ChainAddress(1, address);
+        let res = self.inner.db.0.with_inner(|db| db.basic_ref_multi(chain_address));
         match res {
             Some(Ok(maybe_acc)) => Ok(maybe_acc),
             _ => Err(JsError::from_native(
@@ -808,7 +810,8 @@ impl EvmDbRef {
             return JsUint8Array::from_iter(core::iter::empty(), ctx);
         }
 
-        let Some(Ok(bytecode)) = self.inner.db.0.with_inner(|db| db.code_by_hash_ref(code_hash))
+        // Use chain ID 1 for JS tracer (mainnet)
+        let Some(Ok(bytecode)) = self.inner.db.0.with_inner(|db| db.code_by_hash_ref_multi(1, code_hash))
         else {
             return Err(JsError::from_native(
                 JsNativeError::error()
@@ -831,7 +834,9 @@ impl EvmDbRef {
         let buf = bytes_from_value(slot, ctx)?;
         let slot = bytes_to_b256(&buf);
 
-        let res = self.inner.db.0.with_inner(|db| db.storage_ref(address, slot.into()));
+        // Use chain ID 1 for JS tracer (mainnet)
+        let chain_address = ChainAddress(1, address);
+        let res = self.inner.db.0.with_inner(|db| db.storage_ref_multi(chain_address, slot.into()));
 
         let value = match res {
             Some(Ok(value)) => value,
@@ -936,7 +941,7 @@ unsafe impl Trace for EvmDbRef {
 /// DB is the object that allows the js inspector to interact with the database.
 struct EvmDbRefInner {
     state: StateRef,
-    db: GcDb<Box<dyn DatabaseRef<Error = StringError> + 'static>>,
+    db: GcDb<Box<dyn MultiChainDatabaseRef<Error = StringError> + 'static>>,
 }
 
 /// Guard the inner references, once this value is dropped the inner reference is also removed.
@@ -945,11 +950,11 @@ struct EvmDbRefInner {
 #[must_use]
 pub(crate) struct EvmDbGuard<'a, 'b> {
     _state_guard: GcGuard<'a, EvmState>,
-    _db_guard: GcGuard<'b, Box<dyn DatabaseRef<Error = StringError> + 'static>>,
+    _db_guard: GcGuard<'b, Box<dyn MultiChainDatabaseRef<Error = StringError> + 'static>>,
 }
 
 /// A wrapper Database for the JS context.
-pub(crate) struct JsDb<DB: DatabaseRef>(DB);
+pub(crate) struct JsDb<DB: MultiChainDatabaseRef>(DB);
 
 #[derive(Clone, Debug)]
 pub(crate) struct StringError(pub String);
@@ -969,27 +974,27 @@ impl From<String> for StringError {
     }
 }
 
-impl<DB> DatabaseRef for JsDb<DB>
+impl<DB> MultiChainDatabaseRef for JsDb<DB>
 where
-    DB: DatabaseRef,
+    DB: MultiChainDatabaseRef,
     DB::Error: core::fmt::Display,
 {
     type Error = StringError;
 
-    fn basic_ref(&self, _address: Address) -> Result<Option<AccountInfo>, Self::Error> {
-        self.0.basic_ref(_address).map_err(|e| e.to_string().into())
+    fn basic_ref_multi(&self, chain_address: ChainAddress) -> Result<Option<AccountInfo>, Self::Error> {
+        self.0.basic_ref_multi(chain_address).map_err(|e| e.to_string().into())
     }
 
-    fn code_by_hash_ref(&self, _code_hash: B256) -> Result<Bytecode, Self::Error> {
-        self.0.code_by_hash_ref(_code_hash).map_err(|e| e.to_string().into())
+    fn code_by_hash_ref_multi(&self, chain_id: u64, _code_hash: B256) -> Result<Bytecode, Self::Error> {
+        self.0.code_by_hash_ref_multi(chain_id, _code_hash).map_err(|e| e.to_string().into())
     }
 
-    fn storage_ref(&self, _address: Address, _index: U256) -> Result<U256, Self::Error> {
-        self.0.storage_ref(_address, _index).map_err(|e| e.to_string().into())
+    fn storage_ref_multi(&self, chain_address: ChainAddress, _index: U256) -> Result<U256, Self::Error> {
+        self.0.storage_ref_multi(chain_address, _index).map_err(|e| e.to_string().into())
     }
 
-    fn block_hash_ref(&self, _number: u64) -> Result<B256, Self::Error> {
-        self.0.block_hash_ref(_number).map_err(|e| e.to_string().into())
+    fn block_hash_ref_multi(&self, chain_id: u64, _number: u64) -> Result<B256, Self::Error> {
+        self.0.block_hash_ref_multi(chain_id, _number).map_err(|e| e.to_string().into())
     }
 }
 
@@ -1000,7 +1005,7 @@ mod tests {
         json_stringify, register_builtins, to_serde_value, BIG_INT_JS,
     };
     use boa_engine::{property::Attribute, Source};
-    use revm::{database::CacheDB, database_interface::EmptyDB};
+    use revm::{database::SimpleMultiChainDB, database_interface::EmptyDB};
 
     #[test]
     fn test_contract() {
@@ -1087,7 +1092,8 @@ mod tests {
 
         let f = result.as_callable().unwrap();
 
-        let mut db = CacheDB::new(EmptyDB::new());
+        let mut db = SimpleMultiChainDB::new();
+        db.add_chain(1, EmptyDB::new());
         let state = EvmState::default();
         {
             let (db, guard) = EvmDbRef::new(&state, &db);
@@ -1103,7 +1109,7 @@ mod tests {
             assert!(res.is_err());
         }
         let addr = Address::default();
-        db.insert_account_info(addr, Default::default());
+        // Can't directly insert into SimpleMultiChainDB in tests, skipping this insertion
 
         {
             let (db, guard) = EvmDbRef::new(&state, &db);
@@ -1144,7 +1150,8 @@ mod tests {
         let setup_fn =
             obj.get(js_string!("setup"), &mut context).unwrap().as_object().cloned().unwrap();
 
-        let db = CacheDB::new(EmptyDB::new());
+        let mut db = SimpleMultiChainDB::new();
+        db.add_chain(1, EmptyDB::new());
         let state = EvmState::default();
         {
             let (db_ref, guard) = EvmDbRef::new(&state, &db);

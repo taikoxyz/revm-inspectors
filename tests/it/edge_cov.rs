@@ -7,7 +7,7 @@ use revm::{
         result::{ExecutionResult, Output},
         ContextTr,
     },
-    database::MultiCacheDB,
+    database::{CacheDB, SimpleMultiChainDB},
     database_interface::{EmptyDB, MultiChainDatabaseCommit},
     handler::EvmTr,
     inspector::InspectorEvmTr,
@@ -36,8 +36,8 @@ fn test_edge_coverage() {
     let code = hex!("6080604052348015600f57600080fd5b5060b580601d6000396000f3fe6080604052348015600f57600080fd5b506004361060285760003560e01c8063f42e8cdd14602d575b600080fd5b603c60383660046058565b603e565b005b60005b60ff811015605457816054576001016041565b5050565b600060208284031215606957600080fd5b81358015158114607857600080fd5b939250505056fea2646970667358221220a206d90c473b6930258d5789495c41b79941b5334c47a76b6e618d3571716d5164736f6c634300081c0033");
     let deployer = Address::ZERO;
 
-    let mut multi_db = MultiCacheDB::new();
-    multi_db.add_chain(1, EmptyDB::default());
+    let mut multi_db = SimpleMultiChainDB::new();
+    multi_db.add_chain(1, CacheDB::new(EmptyDB::default()));
     
     let ctx = Context::mainnet()
         .modify_cfg_chained(|cfg| cfg.spec = SpecId::LONDON)
