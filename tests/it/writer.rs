@@ -30,6 +30,11 @@ fn test_trace_printing() {
     
     let mut evm = Context::mainnet()
         .with_db(multi_db)
+        .modify_block_chained(|blocks| {
+            if let Some(block) = blocks.get_mut(&1) {
+                block.prevrandao = Some(B256::ZERO);
+            }
+        })
         .build_mainnet_with_inspector(TracingInspector::new(TracingInspectorConfig::all()));
 
     //let address = evm.deploy(CREATION_CODE.parse().unwrap(), &mut tracer).unwrap();
@@ -53,6 +58,14 @@ fn test_trace_printing() {
         evm.ctx().tx.gas_priority_fee = None;
         evm.ctx().tx.nonce = index as u64;
         evm.set_inspector(TracingInspector::new(TracingInspectorConfig::all()));
+        
+        // Ensure prevrandao is set for inspect_replay_commit
+        evm.ctx().block.entry(1).or_insert_with(|| {
+            let mut block = revm::context::BlockEnv::default();
+            block.prevrandao = Some(B256::ZERO);
+            block
+        });
+        
         let r = evm.inspect_replay_commit().unwrap();
         assert!(r.is_success(), "evm.call reverted: {r:#?}");
 
@@ -95,6 +108,11 @@ fn deploy_fail() {
 
     let mut evm = Context::mainnet()
         .with_db(multi_db)
+        .modify_block_chained(|blocks| {
+            if let Some(block) = blocks.get_mut(&1) {
+                block.prevrandao = Some(B256::ZERO);
+            }
+        })
         .build_mainnet_with_inspector(TracingInspector::new(TracingInspectorConfig::all()));
 
     inspect_deploy_contract(

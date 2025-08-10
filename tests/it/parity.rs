@@ -1,12 +1,12 @@
 //! Parity tests
 
 use crate::utils::{deploy_contract, inspect_deploy_contract, print_traces};
-use alloy_primitives::{address, hex, map::HashSet, Address, U256};
+use alloy_primitives::{address, hex, map::HashSet, Address, B256, U256};
 use alloy_rpc_types_eth::TransactionInfo;
 use alloy_rpc_types_trace::parity::{
     Action, CallAction, CallType, CreationMethod, SelfdestructAction, TraceType,
 };
-use revm::{
+use revm::{context::BlockEnv,
     context::{ContextSetters, TxEnv, TxKind},
     context_interface::{
         result::{ExecutionResult, Output},
@@ -53,7 +53,14 @@ fn test_parity_selfdestruct(spec_id: SpecId) {
     let mut multi_db = MultiCacheDB::new();
     multi_db.add_chain(1, EmptyDB::default());
     multi_db.get_chain_mut(1).unwrap().insert_account_info(deployer, AccountInfo { balance: value, ..Default::default() });
-    let context = Context::mainnet().with_db(multi_db).modify_tx_chained(|tx| tx.value = value);
+    let context = Context::mainnet()
+        .with_db(multi_db)
+        .modify_tx_chained(|tx| tx.value = value)
+        .modify_block_chained(|blocks| {
+            if let Some(block) = blocks.get_mut(&1) {
+                block.prevrandao = Some(B256::ZERO);
+            }
+        });
     let mut evm = context.build_mainnet();
     let output = deploy_contract(&mut evm, code.into(), deployer, spec_id);
     let addr = output.created_address().unwrap();
@@ -68,6 +75,9 @@ fn test_parity_selfdestruct(spec_id: SpecId) {
     });
     let mut evm =
         evm.with_inspector(TracingInspector::new(TracingInspectorConfig::default_parity()));
+    // Ensure prevrandao is set for inspect_replay
+    evm.ctx().block.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
+    
     let res = evm.inspect_replay().unwrap();
     assert!(res.result.is_success(), "{res:#?}");
 
@@ -122,6 +132,11 @@ fn test_parity_constructor_selfdestruct() {
     let mut evm = Context::mainnet()
         .with_db(multi_db)
         .modify_tx_chained(|tx| tx.caller = ChainAddress(1, deployer))
+        .modify_block_chained(|blocks| {
+            if let Some(block) = blocks.get_mut(&1) {
+                block.prevrandao = Some(B256::ZERO);
+            }
+        })
         .build_mainnet_with_inspector(TracingInspector::new(
             TracingInspectorConfig::default_parity(),
         ));
@@ -188,6 +203,11 @@ fn test_parity_call_selfdestruct() {
             tx.caller = ChainAddress(1, deployer);
             tx.value = value;
         })
+        .modify_block_chained(|blocks| {
+            if let Some(block) = blocks.get_mut(&1) {
+                block.prevrandao = Some(B256::ZERO);
+            }
+        })
         .build_mainnet();
 
     let to =
@@ -207,6 +227,9 @@ fn test_parity_call_selfdestruct() {
     let mut evm =
         evm.with_inspector(TracingInspector::new(TracingInspectorConfig::default_parity()));
 
+    // Ensure prevrandao is set for inspect_replay
+    evm.ctx().block.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
+    
     let res = evm.inspect_replay().unwrap();
     match &res.result {
         ExecutionResult::Success { output, .. } => match output {
@@ -262,6 +285,11 @@ fn test_parity_call_selfdestruct_create() {
             tx.caller = ChainAddress(1, caller);
             tx.value = value;
         })
+        .modify_block_chained(|blocks| {
+            if let Some(block) = blocks.get_mut(&1) {
+                block.prevrandao = Some(B256::ZERO);
+            }
+        })
         .build_mainnet();
 
     evm.set_tx(TxEnv {
@@ -277,6 +305,9 @@ fn test_parity_call_selfdestruct_create() {
     let mut evm =
         evm.with_inspector(TracingInspector::new(TracingInspectorConfig::default_parity()));
 
+    // Ensure prevrandao is set for inspect_replay
+    evm.ctx().block.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
+    
     let res = evm.inspect_replay().unwrap();
     match &res.result {
         ExecutionResult::Success { output, .. } => match output {
@@ -339,6 +370,11 @@ fn test_parity_statediff_blob_commit() {
         .modify_cfg_chained(|cfg| {
             cfg.spec = SpecId::CANCUN;
         })
+        .modify_block_chained(|blocks| {
+            if let Some(block) = blocks.get_mut(&1) {
+                block.prevrandao = Some(B256::ZERO);
+            }
+        })
         .with_tx(TxEnv {
             caller: ChainAddress(1, caller),
             gas_limit: 1000000,
@@ -354,6 +390,9 @@ fn test_parity_statediff_blob_commit() {
             TracingInspectorConfig::from_parity_config(&trace_types),
         ));
 
+    // Ensure prevrandao is set for inspect_replay
+    evm.ctx().block.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
+    
     let res = evm.inspect_replay().unwrap();
     let mut full_trace =
         evm.inspector.into_parity_builder().into_trace_results(&res.result, &trace_types);
@@ -392,7 +431,14 @@ fn test_parity_delegatecall_selfdestruct() {
 
     let mut multi_db = MultiCacheDB::new();
     multi_db.add_chain(1, EmptyDB::default());
-    let mut evm = Context::mainnet().with_db(multi_db).build_mainnet();
+    let mut evm = Context::mainnet()
+        .with_db(multi_db)
+        .modify_block_chained(|blocks| {
+            if let Some(block) = blocks.get_mut(&1) {
+                block.prevrandao = Some(B256::ZERO);
+            }
+        })
+        .build_mainnet();
 
     // Deploy DelegateCall contract
     let delegate_addr =
@@ -422,6 +468,9 @@ fn test_parity_delegatecall_selfdestruct() {
     let mut evm =
         evm.with_inspector(TracingInspector::new(TracingInspectorConfig::default_parity()));
 
+    // Ensure prevrandao is set for inspect_replay
+    evm.ctx().block.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
+    
     let res = evm.inspect_replay().unwrap();
     assert!(res.result.is_success());
 
