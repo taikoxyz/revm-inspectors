@@ -15,8 +15,8 @@ use alloy_rpc_types_trace::geth::{
 };
 use revm::{
     context_interface::result::{HaltReasonTr, ResultAndState},
+    database_interface::MultiChainDatabaseRef,
     state::EvmState,
-    DatabaseRef,
 };
 
 /// A type for creating geth style traces
@@ -217,7 +217,7 @@ impl<'a> GethTraceBuilder<'a> {
     /// * `state` - The state post-transaction execution.
     /// * `diff_mode` - if prestate is in diff or prestate mode.
     /// * `db` - The database to fetch state pre-transaction execution.
-    pub fn geth_prestate_traces<DB: DatabaseRef>(
+    pub fn geth_prestate_traces<DB: MultiChainDatabaseRef>(
         &self,
         ResultAndState { state, .. }: &ResultAndState<impl HaltReasonTr>,
         prestate_config: &PreStateConfig,
@@ -232,7 +232,7 @@ impl<'a> GethTraceBuilder<'a> {
         }
     }
 
-    fn geth_prestate_pre_traces<DB: DatabaseRef>(
+    fn geth_prestate_pre_traces<DB: MultiChainDatabaseRef>(
         &self,
         state: &EvmState,
         db: DB,
@@ -244,7 +244,8 @@ impl<'a> GethTraceBuilder<'a> {
 
         // we only want changed accounts for things like balance changes etc
         for (addr, changed_acc) in account_diffs {
-            let db_acc = db.basic_ref(addr.1)?.unwrap_or_default();
+            // addr is already a ChainAddress
+            let db_acc = db.basic_ref_multi(addr)?.unwrap_or_default();
             let code = code_enabled.then(|| load_account_code(&db, &db_acc)).flatten();
             let mut acc_state = AccountState::from_account_info(db_acc.nonce, db_acc.balance, code);
 
@@ -261,7 +262,7 @@ impl<'a> GethTraceBuilder<'a> {
         Ok(PreStateFrame::Default(prestate))
     }
 
-    fn geth_prestate_diff_traces<DB: DatabaseRef>(
+    fn geth_prestate_diff_traces<DB: MultiChainDatabaseRef>(
         &self,
         state: &EvmState,
         db: DB,
@@ -273,7 +274,8 @@ impl<'a> GethTraceBuilder<'a> {
         let mut account_change_kinds =
             HashMap::with_capacity_and_hasher(account_diffs.len(), Default::default());
         for (addr, changed_acc) in account_diffs {
-            let db_acc = db.basic_ref(addr.1)?.unwrap_or_default();
+            // addr is already a ChainAddress
+            let db_acc = db.basic_ref_multi(addr)?.unwrap_or_default();
 
             let pre_code = code_enabled.then(|| load_account_code(&db, &db_acc)).flatten();
 

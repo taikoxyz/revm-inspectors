@@ -398,7 +398,7 @@ fn test_parity_statediff_blob_commit() {
         evm.inspector.into_parity_builder().into_trace_results(&res.result, &trace_types);
 
     let state_diff = full_trace.state_diff.as_mut().unwrap();
-    populate_state_diff(state_diff, multi_db.get_chain(1).unwrap(), res.state.iter().map(|(addr, acc)| (&addr.1, acc))).unwrap();
+    populate_state_diff(state_diff, &multi_db, res.state.iter().map(|(addr, acc)| (&addr.1, acc))).unwrap();
 
     assert!(!state_diff.contains_key(&to));
     assert!(state_diff.contains_key(&caller));
