@@ -11,9 +11,9 @@ use alloy_rpc_types_trace::parity::*;
 use core::iter::Peekable;
 use revm::{
     context_interface::result::{ExecutionResult, HaltReasonTr, ResultAndState},
-    primitives::{hardfork::SpecId, KECCAK_EMPTY},
+    database_interface::MultiChainDatabaseRef,
+    primitives::{hardfork::SpecId, ChainAddress, KECCAK_EMPTY},
     state::Account,
-    DatabaseRef,
 };
 
 /// A type for creating parity style traces
@@ -170,7 +170,7 @@ impl ParityTraceBuilder {
     /// Note: this is considered a convenience method that takes the state map of
     /// [ResultAndState] after inspecting a transaction
     /// with the [TracingInspector](crate::tracing::TracingInspector).
-    pub fn into_trace_results_with_state<DB: DatabaseRef>(
+    pub fn into_trace_results_with_state<DB: MultiChainDatabaseRef>(
         self,
         res: &ResultAndState<impl HaltReasonTr>,
         trace_types: &HashSet<TraceType>,
@@ -190,7 +190,7 @@ impl ParityTraceBuilder {
 
         // check the state diff case
         if let Some(ref mut state_diff) = trace_res.state_diff {
-            populate_state_diff(state_diff, &db, state.iter())?;
+            populate_state_diff(state_diff, &db, state.iter().map(|(addr, acc)| (&addr.1, acc)))?;
         }
 
         // check the vm trace case
@@ -465,7 +465,7 @@ pub(crate) fn populate_vm_trace_bytecodes<DB, I>(
     breadth_first_addresses: I,
 ) -> Result<(), DB::Error>
 where
-    DB: DatabaseRef,
+    DB: MultiChainDatabaseRef,
     I: IntoIterator<Item = Address>,
 {
     let mut stack: VecDeque<&mut VmTrace> = VecDeque::new();
@@ -482,7 +482,8 @@ where
 
         let addr = addrs.next().expect("there should be an address");
 
-        let db_acc = db.basic_ref(addr)?.unwrap_or_default();
+        // Use chain ID 1 for mainnet
+        let db_acc = db.basic_ref_multi(ChainAddress(1, addr))?.unwrap_or_default();
 
         curr_ref.code = if let Some(code) = db_acc.code {
             code.original_bytes()
@@ -490,7 +491,7 @@ where
             let code_hash =
                 if db_acc.code_hash != KECCAK_EMPTY { db_acc.code_hash } else { continue };
 
-            db.code_by_hash_ref(code_hash)?.original_bytes()
+            db.code_by_hash_ref_multi(1, code_hash)?.original_bytes()
         };
     }
 
@@ -513,7 +514,7 @@ pub fn populate_state_diff<'a, DB, I>(
 ) -> Result<(), DB::Error>
 where
     I: IntoIterator<Item = (&'a Address, &'a Account)>,
-    DB: DatabaseRef,
+    DB: MultiChainDatabaseRef,
 {
     for (addr, changed_acc) in account_diffs.into_iter() {
         // if the account was selfdestructed and created during the transaction, we can ignore it
@@ -525,7 +526,8 @@ where
         let entry = state_diff.entry(addr).or_default();
 
         // we need to fetch the account from the db
-        let db_acc = db.basic_ref(addr)?.unwrap_or_default();
+        // Use chain ID 1 for mainnet
+        let db_acc = db.basic_ref_multi(ChainAddress(1, addr))?.unwrap_or_default();
 
         // we check if this account was created during the transaction
         // where the smart contract was not touched before being created (no balance)

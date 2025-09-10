@@ -1,16 +1,17 @@
-use alloy_primitives::{Address, Bytes};
+use alloy_primitives::{Address, Bytes, B256};
 use colorchoice::ColorChoice;
 use revm::{
-    context::{BlockEnv, CfgEnv, Evm, TxEnv},
+    context::{BlockEnv, CfgEnv, Evm, TxEnv, TxKind},
     context_interface::{
         result::{ExecutionResult, HaltReason},
-        TransactTo,
     },
+    database_interface::{MultiChainDatabase, MultiChainDatabaseCommit},
     handler::{instructions::EthInstructions, EthFrame, EthPrecompiles, EvmTr},
     interpreter::interpreter::EthInterpreter,
-    primitives::hardfork::SpecId,
-    Context, Database, DatabaseCommit, ExecuteCommitEvm, InspectCommitEvm, Inspector, Journal,
+    primitives::{hardfork::SpecId, ChainAddress},
+    Context, ExecuteCommitEvm, InspectCommitEvm, Inspector, Journal,
 };
+
 use revm_inspectors::tracing::{TraceWriter, TraceWriterConfig, TracingInspector};
 
 pub type ContextDb<DB> = Context<BlockEnv, TxEnv, CfgEnv, DB, Journal<DB>, ()>;
@@ -39,48 +40,53 @@ pub type EvmDb<DB, INSP> = Evm<
 >;
 
 /// Deploys a contract with the given code and deployer address.
-pub fn deploy_contract<DB: Database + DatabaseCommit>(
+pub fn deploy_contract<DB: MultiChainDatabase + MultiChainDatabaseCommit>(
     evm: &mut EvmDb<DB, ()>,
     code: Bytes,
     deployer: Address,
     spec: SpecId,
 ) -> ExecutionResult<HaltReason> {
-    evm.ctx().modify_tx(|tx| {
-        tx.caller = deployer;
-        tx.gas_limit = 1000000;
-        tx.kind = TransactTo::Create;
-        tx.data = code;
-    });
-    evm.ctx().modify_cfg(|cfg| cfg.spec = spec);
+    evm.ctx().tx.caller = ChainAddress(1, deployer);
+    evm.ctx().tx.gas_limit = 1000000;
+    evm.ctx().tx.kind = TxKind::Create;
+    evm.ctx().tx.data = code;
+    evm.ctx().cfg.spec = spec;
+    
+    // Set prevrandao for post-Merge specs
+    if spec >= SpecId::MERGE {
+        use revm::context::BlockEnv;
+        evm.ctx().block.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
+    }
 
     let out = evm.replay_commit().expect("Expect to be executed");
-    evm.modify_tx(|tx| {
-        tx.nonce += 1;
-    });
+    evm.ctx().tx.nonce += 1;
     out
 }
 
 /// Deploys a contract with the given code and deployer address.
-pub fn inspect_deploy_contract<DB: Database + DatabaseCommit, INSP: Inspector<ContextDb<DB>>>(
+pub fn inspect_deploy_contract<DB: MultiChainDatabase + MultiChainDatabaseCommit, INSP: Inspector<ContextDb<DB>>>(
     evm: &mut EvmDb<DB, INSP>,
     code: Bytes,
     deployer: Address,
     spec: SpecId,
 ) -> ExecutionResult<HaltReason> {
-    evm.ctx().modify_cfg(|cfg| cfg.spec = spec);
+    evm.ctx().cfg.spec = spec;
+    
+    // Set prevrandao for post-Merge specs
+    if spec >= SpecId::MERGE {
+        use revm::context::BlockEnv;
+        evm.ctx().block.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
+    }
+    
+    evm.ctx().tx = TxEnv {
+        caller: ChainAddress(1, deployer),
+        gas_limit: 1000000,
+        kind: TxKind::Create,
+        data: code,
+        ..Default::default()
+    };
+    let output = evm.inspect_replay_commit().expect("Expect to be executed");
 
-    let output = evm
-        .inspect_tx_commit(TxEnv {
-            caller: deployer,
-            gas_limit: 1000000,
-            kind: TransactTo::Create,
-            data: code,
-            ..Default::default()
-        })
-        .expect("Expect to be executed");
-
-    evm.ctx().modify_tx(|tx| {
-        tx.nonce += 1;
-    });
+    evm.ctx().tx.nonce += 1;
     output
 }
