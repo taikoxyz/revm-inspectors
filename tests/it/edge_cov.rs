@@ -1,8 +1,8 @@
 //! Edge coverage tests
 
-use alloy_primitives::{hex, Address, U256};
+use alloy_primitives::{hex, Address, B256, U256};
 use revm::{
-    context::{TxEnv, TxKind},
+    context::{BlockEnv, TxEnv},
     context_interface::{
         result::{ExecutionResult, Output},
         ContextTr,
@@ -11,7 +11,7 @@ use revm::{
     database_interface::{EmptyDB, MultiChainDatabaseCommit},
     handler::EvmTr,
     inspector::InspectorEvmTr,
-    primitives::{hardfork::SpecId, ChainAddress},
+    primitives::{hardfork::SpecId, ChainAddress, MultiChainTxKind},
     Context, ExecuteEvm, InspectEvm, MainBuilder, MainContext,
 };
 use revm_inspectors::{
@@ -41,48 +41,70 @@ fn test_edge_coverage() {
     
     let ctx = Context::mainnet()
         .modify_cfg_chained(|cfg| cfg.spec = SpecId::LONDON)
-        .with_db(multi_db);
+        .with_db(multi_db)
+        .modify_block_chained(|blocks| {
+            blocks.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
+        });
 
     let mut insp = TracingInspector::new(TracingInspectorConfig::default_geth());
 
     let mut evm = ctx.build_mainnet_with_inspector(&mut insp);
 
     // Create contract
-    evm.ctx().tx = TxEnv {
+    let res = evm.inspect_tx(TxEnv {
         caller: ChainAddress(1, deployer),
         gas_limit: 1000000,
-        kind: TxKind::Create,
+        kind: MultiChainTxKind::Create,
         data: code.into(),
-        ..Default::default()
-    };
-    let res = evm.inspect_replay().unwrap();
+        nonce: 0,
+        value: U256::ZERO,
+        gas_price: 0,
+        chain_id: Some(1),
+        chain_ids: Some(vec![1]),
+        tx_type: 0,
+        access_list: Default::default(),
+        gas_priority_fee: None,
+        max_fee_per_blob_gas: 0,
+        blob_hashes: Default::default(),
+        authorization_list: Default::default(),
+    }).unwrap();
     let addr = match res.result {
         ExecutionResult::Success { output, .. } => match output {
-            Output::Create(_, addr) => addr.unwrap().1,
+            Output::Create(_, addr) => addr.unwrap(),
             _ => panic!("Create failed"),
         },
         _ => panic!("Execution failed"),
     };
-    evm.ctx().db().commit_multi(res.state);
+    evm.ctx().db_mut().commit_multi(res.state);
 
-    let acc = evm.ctx().db().get_chain_mut(1).unwrap().load_account(deployer).unwrap();
+    let acc = evm.ctx().db_mut().get_chain_mut(1).unwrap().load_account(deployer).unwrap();
     acc.info.balance = U256::from(u64::MAX);
 
     let tx = TxEnv {
         caller: ChainAddress(1, deployer),
         gas_limit: 100000000,
-        kind: TxKind::Call(ChainAddress(1, addr)),
+        kind: MultiChainTxKind::Call(ChainAddress(1, addr)),
         nonce: 1,
         // 'cast cd "Y(bool)" true'
         data: hex!("f42e8cdd0000000000000000000000000000000000000000000000000000000000000001")
             .into(),
-        ..Default::default()
+        value: U256::ZERO,
+        gas_price: 0,
+        chain_id: Some(1),
+        chain_ids: Some(vec![1]),
+        tx_type: 0,
+        access_list: Default::default(),
+        gas_priority_fee: None,
+        max_fee_per_blob_gas: 0,
+        blob_hashes: Default::default(),
+        authorization_list: Default::default(),
     };
 
     let insp = EdgeCovInspector::new();
     let mut evm = evm.with_inspector(insp);
     evm.ctx().tx = tx;
-    let res = evm.inspect_replay().unwrap();
+    let tx = evm.ctx().tx.clone();
+    let res = evm.inspect_tx(tx).unwrap();
     assert!(res.result.is_success());
 
     let counts = evm.inspector().get_hitcount();
@@ -90,17 +112,25 @@ fn test_edge_coverage() {
     assert_eq!(counts.iter().filter(|&x| *x == 1).count(), 11);
 
     evm.inspector().reset();
-    evm.ctx().tx = TxEnv {
+    let res = evm.inspect_tx(TxEnv {
         caller: ChainAddress(1, deployer),
         gas_limit: 100000000,
-        kind: TxKind::Call(ChainAddress(1, addr)),
+        kind: MultiChainTxKind::Call(ChainAddress(1, addr)),
         nonce: 1,
         // 'cast cd "Y(bool)" false'
         data: hex!("f42e8cdd0000000000000000000000000000000000000000000000000000000000000000")
             .into(),
-        ..Default::default()
-    };
-    let res = evm.inspect_replay().unwrap();
+        value: U256::ZERO,
+        gas_price: 0,
+        chain_id: Some(1),
+        chain_ids: Some(vec![1]),
+        tx_type: 0,
+        access_list: Default::default(),
+        gas_priority_fee: None,
+        max_fee_per_blob_gas: 0,
+        blob_hashes: Default::default(),
+        authorization_list: Default::default(),
+    }).unwrap();
     assert!(res.result.is_success());
 
     // There should be 13 non-zero counts and two edges that have been hit 255 times.

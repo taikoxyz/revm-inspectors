@@ -172,6 +172,8 @@ mod tests {
             SpecId::default(),
             u64::MAX,
             1, // chain_id
+            revm::primitives::ExecutionMode::L2,
+            revm::primitives::gwyneth_forwarder::GwynethSupport::NotSupported,
         );
         let db = CacheDB::new(EmptyDB::default());
         let mut multi_db = revm::database::SimpleMultiChainDB::new();
@@ -205,6 +207,8 @@ mod tests {
             SpecId::default(),
             u64::MAX,
             1, // chain_id
+            revm::primitives::ExecutionMode::L2,
+            revm::primitives::gwyneth_forwarder::GwynethSupport::NotSupported,
         );
         let db = CacheDB::new(EmptyDB::default());
         let mut multi_db = revm::database::SimpleMultiChainDB::new();

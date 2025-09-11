@@ -3,15 +3,13 @@ use alloy_primitives::{address, b256, bytes, hex, Address, B256, U256};
 use alloy_sol_types::{sol, SolCall};
 use colorchoice::ColorChoice;
 use revm::{
-<<<<<<< HEAD
-    context::TxEnv, context_interface::TransactTo, database::CacheDB, database_interface::EmptyDB,
-    inspector::InspectorEvmTr, primitives::hardfork::SpecId, Context, InspectCommitEvm, InspectEvm,
-=======
-    context::TxKind,
-    database::{CacheDB, SimpleMultiChainDB}, database_interface::EmptyDB, handler::EvmTr,
-    inspector::InspectorEvmTr, primitives::{hardfork::SpecId, ChainAddress}, Context, InspectCommitEvm, InspectEvm,
->>>>>>> v0.23.0-gwyneth-claude
-    MainBuilder, MainContext,
+    context::{BlockEnv, TxEnv},
+    database::{CacheDB, SimpleMultiChainDB},
+    database_interface::EmptyDB,
+    handler::EvmTr,
+    inspector::InspectorEvmTr,
+    primitives::{hardfork::SpecId, ChainAddress, MultiChainTxKind},
+    Context, InspectCommitEvm, InspectEvm, MainBuilder, MainContext,
 };
 use revm_inspectors::tracing::{
     types::{DecodedCallData, DecodedInternalCall, DecodedTraceStep},
@@ -36,13 +34,11 @@ fn test_trace_printing() {
     let mut evm = Context::mainnet()
         .with_db(multi_db)
         .modify_block_chained(|blocks| {
-            if let Some(block) = blocks.get_mut(&1) {
-                block.prevrandao = Some(B256::ZERO);
-            }
+            blocks.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
         })
         .build_mainnet_with_inspector(TracingInspector::new(TracingInspectorConfig::all()));
 
-    //let address = evm.deploy(CREATION_CODE.parse().unwrap(), &mut tracer), inspect_replay().unwrap();
+    //let address = evm.deploy(CREATION_CODE.parse().unwrap(), &mut tracer).unwrap();
     let address = inspect_deploy_contract(
         &mut evm,
         CREATION_CODE.parse().unwrap(),
@@ -50,7 +46,7 @@ fn test_trace_printing() {
         SpecId::CANCUN,
     )
     .created_address()
-    , inspect_replay().unwrap();
+    .unwrap();
 
     let mut index = 0;
 
@@ -58,34 +54,14 @@ fn test_trace_printing() {
     index += 1;
 
     let mut call = |data: Vec<u8>| {
-<<<<<<< HEAD
-        evm.set_inspector(TracingInspector::new(TracingInspectorConfig::all()));
-        let r = evm
-            .inspect_tx_commit(
-                TxEnv::builder()
-                    .data(data.into())
-                    .kind(TxKind::Call(address))
-                    .gas_priority_fee(None)
-                    .nonce(index as u64)
-                    .build_fill(),
-            )
-            , inspect_replay().unwrap();
-=======
         evm.ctx().tx.data = data.into();
-        evm.ctx().tx.kind = TxKind::Call(ChainAddress(1, address));
+        evm.ctx().tx.kind = MultiChainTxKind::Call(ChainAddress(1, address));
         evm.ctx().tx.gas_priority_fee = None;
         evm.ctx().tx.nonce = index as u64;
         evm.set_inspector(TracingInspector::new(TracingInspectorConfig::all()));
         
-        // Ensure prevrandao is set for inspect_replay_commit
-        evm.ctx().block.entry(1).or_insert_with(|| {
-            let mut block = revm::context::BlockEnv::default();
-            block.prevrandao = Some(B256::ZERO);
-            block
-        });
-        
-        let r = evm.inspect_replay_commit(), inspect_replay().unwrap();
->>>>>>> v0.23.0-gwyneth-claude
+        let tx = evm.ctx().tx.clone();
+        let r = evm.inspect_tx_commit(tx).unwrap();
         assert!(r.is_success(), "evm.call reverted: {r:#?}");
 
         assert_traces(base_path, None, Some(index), evm.inspector());
@@ -128,9 +104,7 @@ fn deploy_fail() {
     let mut evm = Context::mainnet()
         .with_db(multi_db)
         .modify_block_chained(|blocks| {
-            if let Some(block) = blocks.get_mut(&1) {
-                block.prevrandao = Some(B256::ZERO);
-            }
+            blocks.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
         })
         .build_mainnet_with_inspector(TracingInspector::new(TracingInspectorConfig::all()));
 

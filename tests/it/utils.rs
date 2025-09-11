@@ -1,15 +1,16 @@
-use alloy_primitives::{Address, Bytes, B256};
+
+use alloy_primitives::{Address, Bytes, B256, U256};
 use colorchoice::ColorChoice;
 use revm::{
-    context::{BlockEnv, CfgEnv, Evm, TxEnv, TxKind},
+    context::{BlockEnv, CfgEnv, Evm, TxEnv},
     context_interface::{
         result::{ExecutionResult, HaltReason},
     },
     database_interface::{MultiChainDatabase, MultiChainDatabaseCommit},
     handler::{instructions::EthInstructions, EthFrame, EthPrecompiles, EvmTr},
     interpreter::interpreter::EthInterpreter,
-    primitives::{hardfork::SpecId, ChainAddress},
-    Context, ExecuteCommitEvm, InspectCommitEvm, Inspector, Journal,
+    primitives::{hardfork::SpecId, ChainAddress, MultiChainTxKind},
+    Context, ExecuteCommitEvm, InspectCommitEvm, InspectEvm, Inspector, Journal,
 };
 
 use revm_inspectors::tracing::{TraceWriter, TraceWriterConfig, TracingInspector};
@@ -48,8 +49,9 @@ pub fn deploy_contract<DB: MultiChainDatabase + MultiChainDatabaseCommit>(
 ) -> ExecutionResult<HaltReason> {
     evm.ctx().tx.caller = ChainAddress(1, deployer);
     evm.ctx().tx.gas_limit = 1000000;
-    evm.ctx().tx.kind = TxKind::Create;
+    evm.ctx().tx.kind = MultiChainTxKind::Create;
     evm.ctx().tx.data = code;
+    evm.ctx().tx.nonce = 0;
     evm.ctx().cfg.spec = spec;
     
     // Set prevrandao for post-Merge specs
@@ -58,7 +60,8 @@ pub fn deploy_contract<DB: MultiChainDatabase + MultiChainDatabaseCommit>(
         evm.ctx().block.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
     }
 
-    let out = evm.replay_commit().expect("Expect to be executed");
+    let tx = evm.ctx().tx.clone();
+    let out = evm.transact_commit(tx).expect("Expect to be executed");
     evm.ctx().tx.nonce += 1;
     out
 }
@@ -78,14 +81,23 @@ pub fn inspect_deploy_contract<DB: MultiChainDatabase + MultiChainDatabaseCommit
         evm.ctx().block.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
     }
     
-    evm.ctx().tx = TxEnv {
+    let output = evm.inspect_tx_commit(TxEnv {
         caller: ChainAddress(1, deployer),
         gas_limit: 1000000,
-        kind: TxKind::Create,
+        kind: MultiChainTxKind::Create,
         data: code,
-        ..Default::default()
-    };
-    let output = evm.inspect_replay_commit().expect("Expect to be executed");
+        nonce: 0,
+        value: U256::ZERO,
+        gas_price: 0,
+        chain_id: Some(1),
+        chain_ids: Some(vec![1]),
+        tx_type: 0,
+        access_list: Default::default(),
+        gas_priority_fee: None,
+        max_fee_per_blob_gas: 0,
+        blob_hashes: Default::default(),
+        authorization_list: Default::default(),
+    }).expect("Expect to be executed");
 
     evm.ctx().tx.nonce += 1;
     output
