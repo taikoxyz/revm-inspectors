@@ -1092,7 +1092,8 @@ mod tests {
         let f = result.as_callable().unwrap();
 
         let mut db = SimpleMultiChainDB::new();
-        db.add_chain(1, EmptyDB::new());
+        use revm::database::CacheDB;
+        db.add_chain(1, CacheDB::new(EmptyDB::default()));
         let state = EvmState::default();
         {
             let (db, guard) = EvmDbRef::new(&state, &db);
@@ -1108,7 +1109,11 @@ mod tests {
             assert!(res.is_err());
         }
         let addr = Address::default();
-        // Can't directly insert into SimpleMultiChainDB in tests, skipping this insertion
+        // Insert account info into chain 1
+        use revm::state::AccountInfo;
+        let mut cache_db = CacheDB::new(EmptyDB::default());
+        cache_db.insert_account_info(addr, AccountInfo::default());
+        db.add_chain(1, cache_db);
 
         {
             let (db, guard) = EvmDbRef::new(&state, &db);
@@ -1150,7 +1155,8 @@ mod tests {
             obj.get(js_string!("setup"), &mut context).unwrap().as_object().cloned().unwrap();
 
         let mut db = SimpleMultiChainDB::new();
-        db.add_chain(1, EmptyDB::new());
+        use revm::database::CacheDB;
+        db.add_chain(1, CacheDB::new(EmptyDB::default()));
         let state = EvmState::default();
         {
             let (db_ref, guard) = EvmDbRef::new(&state, &db);

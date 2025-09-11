@@ -1,6 +1,6 @@
 //! Geth tests
 use crate::utils::deploy_contract;
-use alloy_primitives::{hex, map::HashMap, Address, B256, Bytes, TxKind, U256};
+use alloy_primitives::{hex, map::HashMap, Address, B256, Bytes, U256};
 use alloy_rpc_types_eth::TransactionInfo;
 use alloy_rpc_types_trace::geth::{
     mux::MuxConfig, CallConfig, FlatCallConfig, GethDebugBuiltInTracerType, GethDebugTracerConfig,
@@ -14,7 +14,7 @@ use revm::{
     handler::EvmTr,
     inspector::InspectorEvmTr,
     primitives::{hardfork::SpecId, ChainAddress, MultiChainTxKind},
-    Context, InspectEvm, MainBuilder, MainContext,
+    Context, InspectEvm, MainBuilder,
 };
 use revm_inspectors::tracing::{MuxInspector, TracingInspector, TracingInspectorConfig};
 

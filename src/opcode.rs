@@ -154,7 +154,7 @@ mod tests {
         database_interface::EmptyDB,
         interpreter::{interpreter::ExtBytecode, InputsImpl, SharedMemory},
         primitives::{hardfork::SpecId, Bytes},
-        Context, MainContext,
+        Context,
     };
 
     #[test]

@@ -311,7 +311,7 @@ impl JsInspector {
                 .unwrap_or(u64::MAX),
             value: tx.value(),
             block: block.number().try_into().unwrap_or(u64::MAX),
-            coinbase: block.beneficiary(),
+            coinbase: block.beneficiary().1,
             output: output_bytes.unwrap_or_default(),
             time: block.timestamp().to_string(),
             intrinsic_gas: 0,
@@ -472,7 +472,7 @@ where
         if self.try_step(step, db).is_err() {
             interp
                 .bytecode
-                .set_action(InterpreterAction::new_halt(InstructionResult::Revert, interp.gas));
+                .set_action(InterpreterAction::new_halt(InstructionResult::Revert, interp.gas.clone()));
         }
     }
 
@@ -701,13 +701,13 @@ mod tests {
 
     use alloy_primitives::{hex, Address, B256};
     use revm::{
-        context::{TxEnv, TxKind},
+        context::TxEnv,
         database::SimpleMultiChainDB,
         database_interface::EmptyDB,
         inspector::InspectorEvmTr,
-        primitives::{hardfork::SpecId, ChainAddress},
+        primitives::{hardfork::SpecId, ChainAddress, MultiChainTxKind},
         state::{AccountInfo, Bytecode},
-        InspectEvm, MainBuilder, MainContext,
+        InspectEvm, MainBuilder,
     };
     //use revm_inspector::{inspector_handler, InspectorContext, InspectorMainEvm};
     use serde_json::json;
@@ -770,18 +770,20 @@ mod tests {
             .modify_cfg_chained(|cfg| cfg.spec = SpecId::CANCUN)
             .with_db(multi_db)
             .modify_block_chained(|blocks| {
-                if let Some(block) = blocks.get_mut(&1) {
-                    block.prevrandao = Some(B256::ZERO);
-                }
+                use revm::context::BlockEnv;
+                blocks.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
             })
             .build_mainnet_with_inspector(insp);
 
         let res = evm
             .inspect_tx(TxEnv {
+                caller: ChainAddress(1, Address::ZERO),
                 gas_price: 1024,
                 gas_limit: 1_000_000,
                 gas_priority_fee: None,
-                kind: TxKind::Call(ChainAddress(1, addr)),
+                kind: MultiChainTxKind::Call(ChainAddress(1, addr)),
+                chain_id: Some(1),
+                chain_ids: Some(vec![1]),
                 ..Default::default()
             })
             .expect("pass without error");
