@@ -207,7 +207,9 @@ fn test_parity_call_selfdestruct() {
     let to =
         deploy_contract(&mut evm, code.into(), deployer, SpecId::LONDON).created_address().unwrap();
 
-    evm.ctx().db_mut().get_chain_mut(1).unwrap().insert_account_info(to, AccountInfo { balance, ..Default::default() });
+    // Add balance to the deployed contract without overwriting the code
+    let acc = evm.ctx().db_mut().get_chain_mut(1).unwrap().load_account(to).unwrap();
+    acc.info.balance = balance;
 
     evm.ctx().tx = TxEnv {
         caller: ChainAddress(1, caller),
@@ -380,10 +382,9 @@ fn test_parity_statediff_blob_commit() {
             cfg.spec = SpecId::CANCUN;
         })
         .modify_block_chained(|blocks| {
-            if let Some(block) = blocks.get_mut(&1) {
-                block.basefee = 100;
-                block.prevrandao = Some(B256::ZERO);
-            }
+            let block = blocks.entry(1).or_insert_with(BlockEnv::default);
+            block.basefee = 100;
+            block.prevrandao = Some(B256::ZERO);
         })
         .with_tx(TxEnv {
             caller: ChainAddress(1, caller),
@@ -445,15 +446,21 @@ fn test_parity_delegatecall_selfdestruct() {
             blocks.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
         })
         .build_mainnet();
+    
+    // Fund the deployer account
+    evm.ctx().db_mut().get_chain_mut(1).unwrap().insert_account_info(
+        deployer,
+        AccountInfo { balance: U256::from(u64::MAX), nonce: 0, ..Default::default() },
+    );
 
     // Deploy DelegateCall contract
     let delegate_addr =
-        deploy_contract(&mut evm, delegate_code.into(), Address::ZERO, SpecId::PRAGUE)
+        deploy_contract(&mut evm, delegate_code.into(), deployer, SpecId::PRAGUE)
             .created_address()
             .unwrap();
 
     // Deploy SelfDestructTarget contract
-    let target_addr = deploy_contract(&mut evm, target_code.into(), Address::ZERO, SpecId::PRAGUE)
+    let target_addr = deploy_contract(&mut evm, target_code.into(), deployer, SpecId::PRAGUE)
         .created_address()
         .unwrap();
 
@@ -463,12 +470,13 @@ fn test_parity_delegatecall_selfdestruct() {
     input_data.extend_from_slice(target_addr.as_slice());
 
     // Call DelegateCall contract with SelfDestructTarget address
+    // After two deployments from the same deployer, nonce should be 2
     evm.ctx().tx = TxEnv {
         caller: ChainAddress(1, deployer),
         gas_limit: 1000000,
         kind: MultiChainTxKind::Call(ChainAddress(1, delegate_addr)),
         data: input_data.into(),
-        nonce: 0,
+        nonce: 2,
         value: U256::ZERO,
         gas_price: 0,
         chain_id: Some(1),
