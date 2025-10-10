@@ -35,13 +35,11 @@ fn test_access_list_precompile() {
         AccountInfo { code: Some(Bytecode::new_raw(code.into())), ..Default::default() },
     );
 
-    let context = Context::mainnet()
-        .with_db(multi_db)
-        .modify_block_chained(|blocks| {
-            blocks.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
-        });
+    let context = Context::mainnet().with_db(multi_db).modify_block_chained(|blocks| {
+        blocks.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
+    });
     let mut evm = context.build_mainnet();
-    
+
     evm.ctx().tx = TxEnv {
         caller: ChainAddress(1, caller),
         gas_limit: 1000000,

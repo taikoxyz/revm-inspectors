@@ -342,7 +342,8 @@ impl StateRef {
     }
 
     fn get_account(&self, address: &Address) -> Option<AccountInfo> {
-        self.0.with_inner(|state| state.get(&ChainAddress(1, *address)).map(|acc| acc.info.clone()))?
+        self.0
+            .with_inner(|state| state.get(&ChainAddress(1, *address)).map(|acc| acc.info.clone()))?
     }
 }
 
@@ -811,7 +812,8 @@ impl EvmDbRef {
         }
 
         // Use chain ID 1 for JS tracer (mainnet)
-        let Some(Ok(bytecode)) = self.inner.db.0.with_inner(|db| db.code_by_hash_ref_multi(1, code_hash))
+        let Some(Ok(bytecode)) =
+            self.inner.db.0.with_inner(|db| db.code_by_hash_ref_multi(1, code_hash))
         else {
             return Err(JsError::from_native(
                 JsNativeError::error()
@@ -981,15 +983,26 @@ where
 {
     type Error = StringError;
 
-    fn basic_ref_multi(&self, chain_address: ChainAddress) -> Result<Option<AccountInfo>, Self::Error> {
+    fn basic_ref_multi(
+        &self,
+        chain_address: ChainAddress,
+    ) -> Result<Option<AccountInfo>, Self::Error> {
         self.0.basic_ref_multi(chain_address).map_err(|e| e.to_string().into())
     }
 
-    fn code_by_hash_ref_multi(&self, chain_id: u64, _code_hash: B256) -> Result<Bytecode, Self::Error> {
+    fn code_by_hash_ref_multi(
+        &self,
+        chain_id: u64,
+        _code_hash: B256,
+    ) -> Result<Bytecode, Self::Error> {
         self.0.code_by_hash_ref_multi(chain_id, _code_hash).map_err(|e| e.to_string().into())
     }
 
-    fn storage_ref_multi(&self, chain_address: ChainAddress, _index: U256) -> Result<U256, Self::Error> {
+    fn storage_ref_multi(
+        &self,
+        chain_address: ChainAddress,
+        _index: U256,
+    ) -> Result<U256, Self::Error> {
         self.0.storage_ref_multi(chain_address, _index).map_err(|e| e.to_string().into())
     }
 
@@ -1001,9 +1014,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tracing::js::builtins::{
-        json_stringify, register_builtins, to_serde_value,
-    };
+    use crate::tracing::js::builtins::{json_stringify, register_builtins, to_serde_value};
     use boa_engine::Source;
     use revm::{database::SimpleMultiChainDB, database_interface::EmptyDB};
 

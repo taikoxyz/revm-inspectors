@@ -30,7 +30,7 @@ fn test_trace_printing() {
 
     let mut multi_db = SimpleMultiChainDB::new();
     multi_db.add_chain(1, CacheDB::new(EmptyDB::default()));
-    
+
     let mut evm = Context::mainnet()
         .with_db(multi_db)
         .modify_block_chained(|blocks| {
@@ -59,7 +59,7 @@ fn test_trace_printing() {
         evm.ctx().tx.gas_priority_fee = None;
         evm.ctx().tx.nonce = index as u64;
         evm.set_inspector(TracingInspector::new(TracingInspectorConfig::all()));
-        
+
         let tx = evm.ctx().tx.clone();
         let r = evm.inspect_tx_commit(tx).unwrap();
         assert!(r.is_success(), "evm.call reverted: {r:#?}");

@@ -54,18 +54,22 @@ fn test_geth_jstracer_revert() {
 
     let insp = JsInspector::new(code.to_string(), serde_json::Value::Null).unwrap();
     let mut evm = evm.with_inspector(insp);
-    let res = evm.inspect_tx(TxEnv {
-        caller: ChainAddress(1, deployer),
-        gas_limit: 1000000,
-        kind: MultiChainTxKind::Call(ChainAddress(1, addr)),
-        data: hex!("c2985578").into(), // call foo
-        nonce: 1,
-        ..Default::default()
-    }).unwrap();
+    let res = evm
+        .inspect_tx(TxEnv {
+            caller: ChainAddress(1, deployer),
+            gas_limit: 1000000,
+            kind: MultiChainTxKind::Call(ChainAddress(1, addr)),
+            data: hex!("c2985578").into(), // call foo
+            nonce: 1,
+            ..Default::default()
+        })
+        .unwrap();
     assert!(res.result.is_success());
 
     let (context, insp) = evm.ctx_inspector();
-    let result = insp.json_result(res, context.tx(), context.block().get(&1).unwrap(), context.db_ref()).unwrap();
+    let result = insp
+        .json_result(res, context.tx(), context.block().get(&1).unwrap(), context.db_ref())
+        .unwrap();
 
     // successful operation
     assert!(!result["error"].as_bool().unwrap());
@@ -73,18 +77,22 @@ fn test_geth_jstracer_revert() {
     // test with reverted operation
     let insp = JsInspector::new(code.to_string(), serde_json::Value::Null).unwrap();
     let mut evm = evm.with_inspector(insp);
-    let res = evm.inspect_tx(TxEnv {
-        caller: ChainAddress(1, deployer),
-        gas_limit: 1000000,
-        kind: MultiChainTxKind::Call(ChainAddress(1, addr)),
-        data: hex!("febb0f7e").into(), // call bar
-        nonce: 1,
-        ..Default::default()
-    }).unwrap();
+    let res = evm
+        .inspect_tx(TxEnv {
+            caller: ChainAddress(1, deployer),
+            gas_limit: 1000000,
+            kind: MultiChainTxKind::Call(ChainAddress(1, addr)),
+            data: hex!("febb0f7e").into(), // call bar
+            nonce: 1,
+            ..Default::default()
+        })
+        .unwrap();
     assert!(!res.result.is_success());
 
     let (context, insp) = evm.ctx_inspector();
-    let result = insp.json_result(res, context.tx(), context.block().get(&1).unwrap(), context.db_ref()).unwrap();
+    let result = insp
+        .json_result(res, context.tx(), context.block().get(&1).unwrap(), context.db_ref())
+        .unwrap();
 
     // reverted operation
     assert!(result["error"].as_bool().unwrap());
@@ -161,16 +169,20 @@ fn test_geth_jstracer_proxy_contract() {
     let insp = JsInspector::new(code.to_string(), serde_json::Value::Null).unwrap();
 
     let mut evm = evm.with_inspector(insp);
-    let res = evm.inspect_tx(TxEnv {
-        caller: ChainAddress(1, deployer),
-        gas_limit: 1000000,
-        kind: MultiChainTxKind::Call(ChainAddress(1, proxy_addr)),
-        data: input_data.into(),
-        ..Default::default()
-    }).unwrap();
+    let res = evm
+        .inspect_tx(TxEnv {
+            caller: ChainAddress(1, deployer),
+            gas_limit: 1000000,
+            kind: MultiChainTxKind::Call(ChainAddress(1, proxy_addr)),
+            data: input_data.into(),
+            ..Default::default()
+        })
+        .unwrap();
     assert!(res.result.is_success());
 
     let (context, insp) = evm.ctx_inspector();
-    let result = insp.json_result(res, context.tx(), context.block().get(&1).unwrap(), context.db_ref()).unwrap();
+    let result = insp
+        .json_result(res, context.tx(), context.block().get(&1).unwrap(), context.db_ref())
+        .unwrap();
     assert_eq!(result, json!([{"event": "Transfer", "token": proxy_addr, "caller": deployer}]));
 }

@@ -1,8 +1,10 @@
 use alloy_primitives::{map::HashSet, U256};
 use alloy_rpc_types_trace::{
     geth::{
-        // erc7562::Erc7562Config, 
-        CallConfig, FlatCallConfig, GethDefaultTracingOptions,
+        // erc7562::Erc7562Config,
+        CallConfig,
+        FlatCallConfig,
+        GethDefaultTracingOptions,
         PreStateConfig,
     },
     parity::TraceType,

@@ -46,23 +46,25 @@ fn test_internal_transfers() {
     // Create contract
     let mut insp = TracingInspector::new(TracingInspectorConfig::default_geth());
     let mut evm = context.build_mainnet_with_inspector(&mut insp);
-    let res = evm.inspect_tx(TxEnv {
-        caller: ChainAddress(1, deployer),
-        gas_limit: 1000000,
-        kind: MultiChainTxKind::Create,
-        data: code.into(),
-        nonce: 0,
-        value: U256::ZERO,
-        gas_price: 0,
-        chain_id: Some(1),
-        chain_ids: Some(vec![1]),
-        tx_type: 0,
-        access_list: Default::default(),
-        gas_priority_fee: None,
-        max_fee_per_blob_gas: 0,
-        blob_hashes: Default::default(),
-        authorization_list: Default::default(),
-    }).unwrap();
+    let res = evm
+        .inspect_tx(TxEnv {
+            caller: ChainAddress(1, deployer),
+            gas_limit: 1000000,
+            kind: MultiChainTxKind::Create,
+            data: code.into(),
+            nonce: 0,
+            value: U256::ZERO,
+            gas_price: 0,
+            chain_id: Some(1),
+            chain_ids: Some(vec![1]),
+            tx_type: 0,
+            access_list: Default::default(),
+            gas_priority_fee: None,
+            max_fee_per_blob_gas: 0,
+            blob_hashes: Default::default(),
+            authorization_list: Default::default(),
+        })
+        .unwrap();
     let addr = match res.result {
         ExecutionResult::Success { output, .. } => match output {
             Output::Create(_, addr) => addr.unwrap(),

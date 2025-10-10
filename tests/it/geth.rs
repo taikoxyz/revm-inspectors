@@ -1,6 +1,6 @@
 //! Geth tests
 use crate::utils::deploy_contract;
-use alloy_primitives::{hex, map::HashMap, Address, B256, Bytes, U256};
+use alloy_primitives::{hex, map::HashMap, Address, Bytes, B256, U256};
 use alloy_rpc_types_eth::TransactionInfo;
 use alloy_rpc_types_trace::geth::{
     mux::MuxConfig, CallConfig, FlatCallConfig, GethDebugBuiltInTracerType, GethDebugTracerConfig,
@@ -66,57 +66,64 @@ fn test_geth_calltracer_logs() {
     // Fund the deployer account BEFORE deployment
     let acc = evm.ctx().db_mut().get_chain_mut(1).unwrap().load_account(deployer).unwrap();
     acc.info.balance = U256::from(u64::MAX);
-    
+
     let addr =
         deploy_contract(&mut evm, code.into(), deployer, SpecId::LONDON).created_address().unwrap();
 
     eprintln!("test_geth_calltracer_logs: Deployed contract at {:?}", addr);
-    
+
     // Check that the contract was actually deployed
     let deployed_acc = evm.ctx().db_mut().get_chain_mut(1).unwrap().load_account(addr).unwrap();
     eprintln!("Deployed account info: {:?}", deployed_acc.info);
     eprintln!("Has code: {}", deployed_acc.info.code_hash != B256::ZERO);
-    
+
     let mut insp =
         TracingInspector::new(TracingInspectorConfig::default_geth().set_record_logs(true));
 
     let mut evm = evm.with_inspector(&mut insp);
-    
+
     // Verify the contract is still accessible after adding inspector
     let check_acc = evm.ctx().db_mut().get_chain_mut(1).unwrap().load_account(addr).unwrap();
     eprintln!("After adding inspector - Has code: {}", check_acc.info.code_hash != B256::ZERO);
 
-    let res = evm.inspect_tx(TxEnv {
-        caller: ChainAddress(1, deployer),
-        gas_limit: 10000000,
-        kind: MultiChainTxKind::Call(ChainAddress(1, addr)),
-        data: Bytes::default(), // call fallback
-        nonce: 1,
-        value: U256::ZERO,
-        gas_price: 0,
-        chain_id: Some(1),
-        chain_ids: Some(vec![1]),
-        tx_type: 0,
-        access_list: Default::default(),
-        gas_priority_fee: None,
-        max_fee_per_blob_gas: 0,
-        blob_hashes: Default::default(),
-        authorization_list: Default::default(),
-    }).unwrap();
+    let res = evm
+        .inspect_tx(TxEnv {
+            caller: ChainAddress(1, deployer),
+            gas_limit: 10000000,
+            kind: MultiChainTxKind::Call(ChainAddress(1, addr)),
+            data: Bytes::default(), // call fallback
+            nonce: 1,
+            value: U256::ZERO,
+            gas_price: 0,
+            chain_id: Some(1),
+            chain_ids: Some(vec![1]),
+            tx_type: 0,
+            access_list: Default::default(),
+            gas_priority_fee: None,
+            max_fee_per_blob_gas: 0,
+            blob_hashes: Default::default(),
+            authorization_list: Default::default(),
+        })
+        .unwrap();
     eprintln!("test_geth_calltracer_logs result: {:?}", res.result);
     if !res.result.is_success() {
         // Print detailed trace information
         let traces = insp.traces();
         eprintln!("Number of trace nodes: {}", traces.nodes().len());
         for (i, node) in traces.nodes().iter().enumerate() {
-            eprintln!("Node {}: depth={}, kind={:?}, status={:?}", 
-                i, node.trace.depth, node.trace.kind, node.trace.status);
+            eprintln!(
+                "Node {}: depth={}, kind={:?}, status={:?}",
+                i, node.trace.depth, node.trace.kind, node.trace.status
+            );
             eprintln!("  Address: {:?}", node.trace.address);
             eprintln!("  Gas: limit={}, used={}", node.trace.gas_limit, node.trace.gas_used);
             eprintln!("  Caller: {:?}", node.trace.caller);
             eprintln!("  Data len: {}", node.trace.data.len());
             if node.trace.data.len() > 0 {
-                eprintln!("  Data (first 8 bytes): {:?}", &node.trace.data[..node.trace.data.len().min(8)]);
+                eprintln!(
+                    "  Data (first 8 bytes): {:?}",
+                    &node.trace.data[..node.trace.data.len().min(8)]
+                );
             }
             if node.trace.output.len() > 0 {
                 eprintln!("  Output: {:?}", node.trace.output);
@@ -218,7 +225,7 @@ fn test_geth_mux_tracer() {
     // Fund the deployer account BEFORE deployment
     let acc = evm.ctx().db_mut().get_chain_mut(1).unwrap().load_account(deployer).unwrap();
     acc.info.balance = U256::from(u64::MAX);
-    
+
     let addr =
         deploy_contract(&mut evm, code.into(), deployer, SpecId::LONDON).created_address().unwrap();
 
@@ -247,23 +254,25 @@ fn test_geth_mux_tracer() {
 
     let mut evm = evm.with_inspector(&mut insp);
 
-    let res = evm.inspect_tx(TxEnv {
-        caller: ChainAddress(1, deployer),
-        gas_limit: 10000000,
-        kind: MultiChainTxKind::Call(ChainAddress(1, addr)),
-        data: Bytes::default(), // call fallback
-        nonce: 1,
-        value: U256::ZERO,
-        gas_price: 0,
-        chain_id: Some(1),
-        chain_ids: Some(vec![1]),
-        tx_type: 0,
-        access_list: Default::default(),
-        gas_priority_fee: None,
-        max_fee_per_blob_gas: 0,
-        blob_hashes: Default::default(),
-        authorization_list: Default::default(),
-    }).unwrap();
+    let res = evm
+        .inspect_tx(TxEnv {
+            caller: ChainAddress(1, deployer),
+            gas_limit: 10000000,
+            kind: MultiChainTxKind::Call(ChainAddress(1, addr)),
+            data: Bytes::default(), // call fallback
+            nonce: 1,
+            value: U256::ZERO,
+            gas_price: 0,
+            chain_id: Some(1),
+            chain_ids: Some(vec![1]),
+            tx_type: 0,
+            access_list: Default::default(),
+            gas_priority_fee: None,
+            max_fee_per_blob_gas: 0,
+            blob_hashes: Default::default(),
+            authorization_list: Default::default(),
+        })
+        .unwrap();
     assert!(res.result.is_success());
 
     let (ctx, inspector) = evm.ctx_inspector();
@@ -415,7 +424,7 @@ fn test_geth_calltracer_top_call_reverting() {
     // Fund the deployer account BEFORE deployment
     let acc = evm.ctx().db_mut().get_chain_mut(1).unwrap().load_account(deployer).unwrap();
     acc.info.balance = U256::from(u64::MAX);
-    
+
     let addr =
         deploy_contract(&mut evm, code.into(), deployer, SpecId::LONDON).created_address().unwrap();
 
@@ -424,38 +433,40 @@ fn test_geth_calltracer_top_call_reverting() {
     let mut evm = evm.with_inspector(&mut insp);
 
     eprintln!("test_geth_calltracer_top_call_reverting: deployed contract at {addr:?}");
-    
+
     // Call nestedEmitWithFailureAfterNestedEmit which has nested calls before reverting
-    let res = evm.inspect_tx(TxEnv {
-        caller: ChainAddress(1, deployer),
-        gas_limit: 10000000,
-        kind: MultiChainTxKind::Call(ChainAddress(1, addr)),
-        data: hex!("0332ed13").into(), // nestedEmitWithFailureAfterNestedEmit() selector
-        nonce: 1,
-        value: U256::ZERO,
-        gas_price: 0,
-        chain_id: Some(1),
-        chain_ids: Some(vec![1]),
-        tx_type: 0,
-        access_list: Default::default(),
-        gas_priority_fee: None,
-        max_fee_per_blob_gas: 0,
-        blob_hashes: Default::default(),
-        authorization_list: Default::default(),
-    }).unwrap();
+    let res = evm
+        .inspect_tx(TxEnv {
+            caller: ChainAddress(1, deployer),
+            gas_limit: 10000000,
+            kind: MultiChainTxKind::Call(ChainAddress(1, addr)),
+            data: hex!("0332ed13").into(), // nestedEmitWithFailureAfterNestedEmit() selector
+            nonce: 1,
+            value: U256::ZERO,
+            gas_price: 0,
+            chain_id: Some(1),
+            chain_ids: Some(vec![1]),
+            tx_type: 0,
+            access_list: Default::default(),
+            gas_priority_fee: None,
+            max_fee_per_blob_gas: 0,
+            blob_hashes: Default::default(),
+            authorization_list: Default::default(),
+        })
+        .unwrap();
 
     assert!(!res.result.is_success());
 
     // Get call traces with only_top_call = true
     let call_config_top = CallConfig { only_top_call: Some(true), with_log: Some(false) };
-    
+
     eprintln!("test_geth_calltracer_top_call_reverting: inspector traces = {:#?}", insp.traces());
-    
+
     let call_frame_top = insp
         .with_transaction_gas_used(res.result.gas_used())
         .geth_builder()
         .geth_call_traces(call_config_top, res.result.gas_used());
-    
+
     eprintln!("test_geth_calltracer_top_call_reverting: call_frame_top = {:#?}", call_frame_top);
 
     // With only_top_call = true, we should not see any subcalls in the trace
@@ -476,30 +487,32 @@ fn test_geth_calltracer_top_call_reverting() {
     // Fund the deployer account BEFORE deployment
     let acc2 = evm2.ctx().db_mut().get_chain_mut(1).unwrap().load_account(deployer).unwrap();
     acc2.info.balance = U256::from(u64::MAX);
-    
+
     let addr2 = deploy_contract(&mut evm2, code.into(), deployer, SpecId::LONDON)
         .created_address()
         .unwrap();
-    
+
     let mut evm2 = evm2.with_inspector(&mut insp2);
 
-    let res2 = evm2.inspect_tx(TxEnv {
-        caller: ChainAddress(1, deployer),
-        gas_limit: 10000000,
-        kind: MultiChainTxKind::Call(ChainAddress(1, addr2)),
-        data: hex!("0332ed13").into(), // nestedEmitWithFailureAfterNestedEmit() selector
-        nonce: 1,
-        value: U256::ZERO,
-        gas_price: 0,
-        chain_id: Some(1),
-        chain_ids: Some(vec![1]),
-        tx_type: 0,
-        access_list: Default::default(),
-        gas_priority_fee: None,
-        max_fee_per_blob_gas: 0,
-        blob_hashes: Default::default(),
-        authorization_list: Default::default(),
-    }).unwrap();
+    let res2 = evm2
+        .inspect_tx(TxEnv {
+            caller: ChainAddress(1, deployer),
+            gas_limit: 10000000,
+            kind: MultiChainTxKind::Call(ChainAddress(1, addr2)),
+            data: hex!("0332ed13").into(), // nestedEmitWithFailureAfterNestedEmit() selector
+            nonce: 1,
+            value: U256::ZERO,
+            gas_price: 0,
+            chain_id: Some(1),
+            chain_ids: Some(vec![1]),
+            tx_type: 0,
+            access_list: Default::default(),
+            gas_priority_fee: None,
+            max_fee_per_blob_gas: 0,
+            blob_hashes: Default::default(),
+            authorization_list: Default::default(),
+        })
+        .unwrap();
 
     assert!(!res2.result.is_success());
 
@@ -547,7 +560,7 @@ fn test_geth_calltracer_nested_revert() {
     // Fund the deployer account BEFORE deployment
     let acc = evm.ctx().db_mut().get_chain_mut(1).unwrap().load_account(deployer).unwrap();
     acc.info.balance = U256::from(u64::MAX);
-    
+
     let addr =
         deploy_contract(&mut evm, code.into(), deployer, SpecId::LONDON).created_address().unwrap();
 
@@ -556,23 +569,25 @@ fn test_geth_calltracer_nested_revert() {
     let mut evm = evm.with_inspector(&mut insp);
 
     // Call nestedRevert which calls nestedEmitWithFailure
-    let res = evm.inspect_tx(TxEnv {
-        caller: ChainAddress(1, deployer),
-        gas_limit: 10000000,
-        kind: MultiChainTxKind::Call(ChainAddress(1, addr)),
-        data: hex!("c8cc8494").into(), // nestedRevert() selector
-        nonce: 1,
-        value: U256::ZERO,
-        gas_price: 0,
-        chain_id: Some(1),
-        chain_ids: Some(vec![1]),
-        tx_type: 0,
-        access_list: Default::default(),
-        gas_priority_fee: None,
-        max_fee_per_blob_gas: 0,
-        blob_hashes: Default::default(),
-        authorization_list: Default::default(),
-    }).unwrap();
+    let res = evm
+        .inspect_tx(TxEnv {
+            caller: ChainAddress(1, deployer),
+            gas_limit: 10000000,
+            kind: MultiChainTxKind::Call(ChainAddress(1, addr)),
+            data: hex!("c8cc8494").into(), // nestedRevert() selector
+            nonce: 1,
+            value: U256::ZERO,
+            gas_price: 0,
+            chain_id: Some(1),
+            chain_ids: Some(vec![1]),
+            tx_type: 0,
+            access_list: Default::default(),
+            gas_priority_fee: None,
+            max_fee_per_blob_gas: 0,
+            blob_hashes: Default::default(),
+            authorization_list: Default::default(),
+        })
+        .unwrap();
 
     assert!(!res.result.is_success());
 
@@ -601,46 +616,51 @@ fn test_geth_calltracer_nested_revert() {
     // Fund the deployer account BEFORE deployment
     let acc2 = evm2.ctx().db_mut().get_chain_mut(1).unwrap().load_account(deployer).unwrap();
     acc2.info.balance = U256::from(u64::MAX);
-    
+
     let addr2 = deploy_contract(&mut evm2, code.into(), deployer, SpecId::LONDON)
         .created_address()
         .unwrap();
-    
+
     let mut evm2 = evm2.with_inspector(&mut insp2);
 
-    let res2 = evm2.inspect_tx(TxEnv {
-        caller: ChainAddress(1, deployer),
-        gas_limit: 10000000,
-        kind: MultiChainTxKind::Call(ChainAddress(1, addr2)),
-        data: hex!("c8cc8494").into(), // nestedRevert() selector
-        nonce: 1,
-        value: U256::ZERO,
-        gas_price: 0,
-        chain_id: Some(1),
-        chain_ids: Some(vec![1]),
-        tx_type: 0,
-        access_list: Default::default(),
-        gas_priority_fee: None,
-        max_fee_per_blob_gas: 0,
-        blob_hashes: Default::default(),
-        authorization_list: Default::default(),
-    }).unwrap();
+    let res2 = evm2
+        .inspect_tx(TxEnv {
+            caller: ChainAddress(1, deployer),
+            gas_limit: 10000000,
+            kind: MultiChainTxKind::Call(ChainAddress(1, addr2)),
+            data: hex!("c8cc8494").into(), // nestedRevert() selector
+            nonce: 1,
+            value: U256::ZERO,
+            gas_price: 0,
+            chain_id: Some(1),
+            chain_ids: Some(vec![1]),
+            tx_type: 0,
+            access_list: Default::default(),
+            gas_priority_fee: None,
+            max_fee_per_blob_gas: 0,
+            blob_hashes: Default::default(),
+            authorization_list: Default::default(),
+        })
+        .unwrap();
 
     assert!(!res2.result.is_success());
 
     // Get call traces with only_top_call = false
     let call_config_all = CallConfig { only_top_call: Some(false), with_log: Some(false) };
-    
+
     // Debug: Check traces before building call frame
     eprintln!("test_geth_calltracer_nested_revert: inspector traces = {:#?}", insp2.traces());
-    
+
     let call_frame_all = insp2
         .with_transaction_gas_used(res2.result.gas_used())
         .geth_builder()
         .geth_call_traces(call_config_all, res2.result.gas_used());
 
     // nestedRevert calls nestedEmitWithFailure, so we should see one subcall
-    eprintln!("test_geth_calltracer_nested_revert: call_frame_all.calls.len() = {}", call_frame_all.calls.len());
+    eprintln!(
+        "test_geth_calltracer_nested_revert: call_frame_all.calls.len() = {}",
+        call_frame_all.calls.len()
+    );
     eprintln!("test_geth_calltracer_nested_revert: call_frame_all = {:#?}", call_frame_all);
     assert_eq!(call_frame_all.calls.len(), 1, "Should have one subcall to nestedEmitWithFailure");
     assert!(call_frame_all.error.is_some(), "Top call should have an error");
@@ -666,23 +686,25 @@ fn test_geth_calltracer_nested_revert() {
         .unwrap();
     let mut evm3 = evm3.with_inspector(&mut insp3);
 
-    let res3 = evm3.inspect_tx(TxEnv {
-        caller: ChainAddress(1, deployer),
-        gas_limit: 10000000,
-        kind: MultiChainTxKind::Call(ChainAddress(1, addr3)),
-        data: hex!("c8cc8494").into(), // nestedRevert() selector
-        nonce: 1,
-        value: U256::ZERO,
-        gas_price: 0,
-        chain_id: Some(1),
-        chain_ids: Some(vec![1]),
-        tx_type: 0,
-        access_list: Default::default(),
-        gas_priority_fee: None,
-        max_fee_per_blob_gas: 0,
-        blob_hashes: Default::default(),
-        authorization_list: Default::default(),
-    }).unwrap();
+    let res3 = evm3
+        .inspect_tx(TxEnv {
+            caller: ChainAddress(1, deployer),
+            gas_limit: 10000000,
+            kind: MultiChainTxKind::Call(ChainAddress(1, addr3)),
+            data: hex!("c8cc8494").into(), // nestedRevert() selector
+            nonce: 1,
+            value: U256::ZERO,
+            gas_price: 0,
+            chain_id: Some(1),
+            chain_ids: Some(vec![1]),
+            tx_type: 0,
+            access_list: Default::default(),
+            gas_priority_fee: None,
+            max_fee_per_blob_gas: 0,
+            blob_hashes: Default::default(),
+            authorization_list: Default::default(),
+        })
+        .unwrap();
 
     assert!(!res3.result.is_success());
 

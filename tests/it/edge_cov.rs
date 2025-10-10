@@ -38,7 +38,7 @@ fn test_edge_coverage() {
 
     let mut multi_db = SimpleMultiChainDB::new();
     multi_db.add_chain(1, CacheDB::new(EmptyDB::default()));
-    
+
     let ctx = Context::mainnet()
         .modify_cfg_chained(|cfg| cfg.spec = SpecId::LONDON)
         .with_db(multi_db)
@@ -51,23 +51,25 @@ fn test_edge_coverage() {
     let mut evm = ctx.build_mainnet_with_inspector(&mut insp);
 
     // Create contract
-    let res = evm.inspect_tx(TxEnv {
-        caller: ChainAddress(1, deployer),
-        gas_limit: 1000000,
-        kind: MultiChainTxKind::Create,
-        data: code.into(),
-        nonce: 0,
-        value: U256::ZERO,
-        gas_price: 0,
-        chain_id: Some(1),
-        chain_ids: Some(vec![1]),
-        tx_type: 0,
-        access_list: Default::default(),
-        gas_priority_fee: None,
-        max_fee_per_blob_gas: 0,
-        blob_hashes: Default::default(),
-        authorization_list: Default::default(),
-    }).unwrap();
+    let res = evm
+        .inspect_tx(TxEnv {
+            caller: ChainAddress(1, deployer),
+            gas_limit: 1000000,
+            kind: MultiChainTxKind::Create,
+            data: code.into(),
+            nonce: 0,
+            value: U256::ZERO,
+            gas_price: 0,
+            chain_id: Some(1),
+            chain_ids: Some(vec![1]),
+            tx_type: 0,
+            access_list: Default::default(),
+            gas_priority_fee: None,
+            max_fee_per_blob_gas: 0,
+            blob_hashes: Default::default(),
+            authorization_list: Default::default(),
+        })
+        .unwrap();
     let addr = match res.result {
         ExecutionResult::Success { output, .. } => match output {
             Output::Create(_, addr) => addr.unwrap(),
@@ -112,25 +114,27 @@ fn test_edge_coverage() {
     assert_eq!(counts.iter().filter(|&x| *x == 1).count(), 11);
 
     evm.inspector().reset();
-    let res = evm.inspect_tx(TxEnv {
-        caller: ChainAddress(1, deployer),
-        gas_limit: 100000000,
-        kind: MultiChainTxKind::Call(ChainAddress(1, addr)),
-        nonce: 1,
-        // 'cast cd "Y(bool)" false'
-        data: hex!("f42e8cdd0000000000000000000000000000000000000000000000000000000000000000")
-            .into(),
-        value: U256::ZERO,
-        gas_price: 0,
-        chain_id: Some(1),
-        chain_ids: Some(vec![1]),
-        tx_type: 0,
-        access_list: Default::default(),
-        gas_priority_fee: None,
-        max_fee_per_blob_gas: 0,
-        blob_hashes: Default::default(),
-        authorization_list: Default::default(),
-    }).unwrap();
+    let res = evm
+        .inspect_tx(TxEnv {
+            caller: ChainAddress(1, deployer),
+            gas_limit: 100000000,
+            kind: MultiChainTxKind::Call(ChainAddress(1, addr)),
+            nonce: 1,
+            // 'cast cd "Y(bool)" false'
+            data: hex!("f42e8cdd0000000000000000000000000000000000000000000000000000000000000000")
+                .into(),
+            value: U256::ZERO,
+            gas_price: 0,
+            chain_id: Some(1),
+            chain_ids: Some(vec![1]),
+            tx_type: 0,
+            access_list: Default::default(),
+            gas_priority_fee: None,
+            max_fee_per_blob_gas: 0,
+            blob_hashes: Default::default(),
+            authorization_list: Default::default(),
+        })
+        .unwrap();
     assert!(res.result.is_success());
 
     // There should be 13 non-zero counts and two edges that have been hit 255 times.
