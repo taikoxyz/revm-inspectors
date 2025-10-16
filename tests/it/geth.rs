@@ -187,8 +187,7 @@ fn test_geth_mux_tracer() {
     assert!(res.result.is_success());
 
     let (ctx, inspector) = evm.ctx_inspector();
-    let frame =
-        inspector.try_into_mux_frame(&res, ctx.db(), TransactionInfo::default()).unwrap();
+    let frame = inspector.try_into_mux_frame(&res, ctx.db(), TransactionInfo::default()).unwrap();
 
     assert_eq!(frame.0.len(), 4);
     assert!(frame.0.contains_key(&GethDebugBuiltInTracerType::FourByteTracer));

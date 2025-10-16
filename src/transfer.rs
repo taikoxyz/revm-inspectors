@@ -2,7 +2,11 @@ use alloc::{vec, vec::Vec};
 use alloy_primitives::{address, b256, Address, Log, LogData, B256, U256};
 use alloy_sol_types::SolValue;
 use revm::{
-    context::{JournalTr, MultiChainDatabase}, context_interface::ContextTr, interpreter::{CallInputs, CallOutcome, CreateInputs, CreateOutcome, CreateScheme}, primitives::ChainAddress, Inspector
+    context::{JournalTr, MultiChainDatabase},
+    context_interface::ContextTr,
+    interpreter::{CallInputs, CallOutcome, CreateInputs, CreateOutcome, CreateScheme},
+    primitives::ChainAddress,
+    Inspector,
 };
 
 /// Sender of ETH transfer log per `eth_simulateV1` spec.

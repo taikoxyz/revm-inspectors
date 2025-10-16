@@ -4,9 +4,12 @@ use alloy_sol_types::{sol, SolCall};
 use colorchoice::ColorChoice;
 use revm::{
     context::TxKind,
-    database::{CacheDB, SimpleMultiChainDB}, database_interface::EmptyDB, handler::EvmTr,
-    inspector::InspectorEvmTr, primitives::{hardfork::SpecId, ChainAddress}, Context, InspectCommitEvm, InspectEvm,
-    MainBuilder, MainContext,
+    database::{CacheDB, SimpleMultiChainDB},
+    database_interface::EmptyDB,
+    handler::EvmTr,
+    inspector::InspectorEvmTr,
+    primitives::{hardfork::SpecId, ChainAddress},
+    Context, InspectCommitEvm, InspectEvm, MainBuilder, MainContext,
 };
 use revm_inspectors::tracing::{
     types::{DecodedCallData, DecodedInternalCall, DecodedTraceStep},
@@ -27,7 +30,7 @@ fn test_trace_printing() {
 
     let mut multi_db = SimpleMultiChainDB::new();
     multi_db.add_chain(1, CacheDB::new(EmptyDB::default()));
-    
+
     let mut evm = Context::mainnet()
         .with_db(multi_db)
         .modify_block_chained(|blocks| {
@@ -58,14 +61,14 @@ fn test_trace_printing() {
         evm.ctx().tx.gas_priority_fee = None;
         evm.ctx().tx.nonce = index as u64;
         evm.set_inspector(TracingInspector::new(TracingInspectorConfig::all()));
-        
+
         // Ensure prevrandao is set for inspect_replay_commit
         evm.ctx().block.entry(1).or_insert_with(|| {
             let mut block = revm::context::BlockEnv::default();
             block.prevrandao = Some(B256::ZERO);
             block
         });
-        
+
         let r = evm.inspect_replay_commit().unwrap();
         assert!(r.is_success(), "evm.call reverted: {r:#?}");
 

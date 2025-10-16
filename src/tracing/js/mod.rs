@@ -398,10 +398,7 @@ impl JsInspector {
             return;
         }
         let precompiles = PrecompileList(
-            context.journal().precompile_addresses()
-                .iter()
-                .map(|ca| ca.1)
-                .collect()
+            context.journal().precompile_addresses().iter().map(|ca| ca.1).collect(),
         );
 
         let _ = precompiles.register_callable(&mut self.ctx);
@@ -702,7 +699,7 @@ mod tests {
     // Helper function to run a trace and return the result
     fn run_trace(code: &str, contract: Option<Bytes>, success: bool) -> serde_json::Value {
         let addr = Address::repeat_byte(0x01);
-        
+
         // Create SimpleMultiChainDB with test data
         let mut chain_db = revm::database::CacheDB::new(EmptyDB::default());
         // Insert the caller
@@ -721,7 +718,7 @@ mod tests {
                 ..Default::default()
             },
         );
-        
+
         let mut multi_db = SimpleMultiChainDB::new();
         multi_db.add_chain(1, chain_db);
 

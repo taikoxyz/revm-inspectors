@@ -2,9 +2,14 @@
 
 use alloy_primitives::{address, hex, B256};
 use revm::{
-    bytecode::Bytecode, context::{TxEnv, TxKind}, database::{CacheDB, SimpleMultiChainDB},
-    database_interface::EmptyDB, handler::EvmTr, primitives::ChainAddress, state::AccountInfo, Context, InspectEvm,
-    MainBuilder, MainContext,
+    bytecode::Bytecode,
+    context::{TxEnv, TxKind},
+    database::{CacheDB, SimpleMultiChainDB},
+    database_interface::EmptyDB,
+    handler::EvmTr,
+    primitives::ChainAddress,
+    state::AccountInfo,
+    Context, InspectEvm, MainBuilder, MainContext,
 };
 use revm_inspectors::access_list::AccessListInspector;
 
@@ -30,19 +35,17 @@ fn test_access_list_precompile() {
         AccountInfo { code: Some(Bytecode::new_raw(code.into())), ..Default::default() },
     );
 
-    let context = Context::mainnet()
-        .with_db(multi_db)
-        .modify_block_chained(|blocks| {
-            if let Some(block) = blocks.get_mut(&1) {
-                block.prevrandao = Some(B256::ZERO);
-            }
-        });
+    let context = Context::mainnet().with_db(multi_db).modify_block_chained(|blocks| {
+        if let Some(block) = blocks.get_mut(&1) {
+            block.prevrandao = Some(B256::ZERO);
+        }
+    });
     let mut evm = context.build_mainnet();
 
     // Ensure prevrandao is set for inspect_replay
     use revm::context::BlockEnv;
     evm.ctx().block.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
-    
+
     evm.ctx().tx = TxEnv {
         caller: ChainAddress(1, caller),
         gas_limit: 1000000,

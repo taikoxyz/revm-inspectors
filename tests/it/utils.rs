@@ -2,9 +2,7 @@ use alloy_primitives::{Address, Bytes, B256};
 use colorchoice::ColorChoice;
 use revm::{
     context::{BlockEnv, CfgEnv, Evm, TxEnv, TxKind},
-    context_interface::{
-        result::{ExecutionResult, HaltReason},
-    },
+    context_interface::result::{ExecutionResult, HaltReason},
     database_interface::{MultiChainDatabase, MultiChainDatabaseCommit},
     handler::{instructions::EthInstructions, EthPrecompiles, EvmTr},
     interpreter::interpreter::EthInterpreter,
@@ -46,7 +44,7 @@ pub fn deploy_contract<DB: MultiChainDatabase + MultiChainDatabaseCommit>(
     evm.ctx().tx.kind = TxKind::Create;
     evm.ctx().tx.data = code;
     evm.ctx().cfg.spec = spec;
-    
+
     // Set prevrandao for post-Merge specs
     if spec >= SpecId::MERGE {
         use revm::context::BlockEnv;
@@ -59,20 +57,23 @@ pub fn deploy_contract<DB: MultiChainDatabase + MultiChainDatabaseCommit>(
 }
 
 /// Deploys a contract with the given code and deployer address.
-pub fn inspect_deploy_contract<DB: MultiChainDatabase + MultiChainDatabaseCommit, INSP: Inspector<ContextDb<DB>>>(
+pub fn inspect_deploy_contract<
+    DB: MultiChainDatabase + MultiChainDatabaseCommit,
+    INSP: Inspector<ContextDb<DB>>,
+>(
     evm: &mut EvmDb<DB, INSP>,
     code: Bytes,
     deployer: Address,
     spec: SpecId,
 ) -> ExecutionResult<HaltReason> {
     evm.ctx().cfg.spec = spec;
-    
+
     // Set prevrandao for post-Merge specs
     if spec >= SpecId::MERGE {
         use revm::context::BlockEnv;
         evm.ctx().block.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
     }
-    
+
     evm.ctx().tx = TxEnv {
         caller: ChainAddress(1, deployer),
         gas_limit: 1000000,

@@ -2,8 +2,7 @@
 
 use alloy_primitives::{hex, Address, U256};
 use revm::{
-    context::TxEnv,
-    context::TxKind,
+    context::{TxEnv, TxKind},
     database::{CacheDB, SimpleMultiChainDB},
     database_interface::EmptyDB,
     primitives::{hardfork::SpecId, ChainAddress},
@@ -30,13 +29,14 @@ fn test_internal_transfers() {
 
     let mut multi_db = SimpleMultiChainDB::new();
     multi_db.add_chain(1, CacheDB::new(EmptyDB::default()));
-    
-    // Insert deployer account with balance first
-    multi_db.get_chain_mut(1).unwrap().insert_account_info(deployer, AccountInfo { balance: U256::from(u64::MAX), ..Default::default() });
 
-    let mut evm = Context::mainnet()
-        .with_db(multi_db)
-        .build_mainnet();
+    // Insert deployer account with balance first
+    multi_db.get_chain_mut(1).unwrap().insert_account_info(
+        deployer,
+        AccountInfo { balance: U256::from(u64::MAX), ..Default::default() },
+    );
+
+    let mut evm = Context::mainnet().with_db(multi_db).build_mainnet();
 
     // Deploy contract using utility function
     let res = deploy_contract(&mut evm, code.into(), deployer, SpecId::LONDON);
@@ -84,27 +84,28 @@ fn test_internal_transfers() {
     // Since evm was consumed, we need to create a new one with the database
     // that has the deployed contract
     let mut internal_inspector = TransferInspector::internal_only();
-    
+
     // Get the database from the original evm's journal
     // Actually, we can't access it after with_inspector consumed it
     // So let's just run the second test without creating a new evm
     // We'll use a different contract call to test internal_only
-    
+
     // Deploy and call the contract again for the internal_only test
     let mut multi_db2 = SimpleMultiChainDB::new();
     multi_db2.add_chain(1, CacheDB::new(EmptyDB::default()));
-    multi_db2.get_chain_mut(1).unwrap().insert_account_info(deployer, AccountInfo { balance: U256::from(u64::MAX), ..Default::default() });
-    
-    let mut evm2 = Context::mainnet()
-        .with_db(multi_db2)
-        .build_mainnet();
-    
+    multi_db2.get_chain_mut(1).unwrap().insert_account_info(
+        deployer,
+        AccountInfo { balance: U256::from(u64::MAX), ..Default::default() },
+    );
+
+    let mut evm2 = Context::mainnet().with_db(multi_db2).build_mainnet();
+
     // Deploy contract again
     let res2 = deploy_contract(&mut evm2, code.into(), deployer, SpecId::LONDON);
     assert!(res2.is_success(), "Second contract deployment failed: {:?}", res2);
     let addr2 = res2.created_address().unwrap();
     println!("Deployed second contract to address: {:?}", addr2);
-    
+
     // Set up transaction for internal_only test
     evm2.ctx.tx = TxEnv {
         caller: ChainAddress(1, deployer),

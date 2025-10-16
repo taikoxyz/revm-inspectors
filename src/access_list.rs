@@ -99,7 +99,8 @@ impl AccessListInspector {
             // We need to exclude the created address if this is a CREATE frame.
             //
             // This assumes that caller has already been loaded but nonce was not increased yet.
-            let nonce = context.journal_ref().evm_state().get(&ChainAddress(1, from)).unwrap().info.nonce;
+            let nonce =
+                context.journal_ref().evm_state().get(&ChainAddress(1, from)).unwrap().info.nonce;
             from.create(nonce)
         };
         let precompiles = context.journal_ref().precompile_addresses().clone();
@@ -109,7 +110,7 @@ impl AccessListInspector {
 
         // Convert precompiles from HashSet<ChainAddress> to iterator of Address
         let precompile_addrs = precompiles.into_iter().map(|ca| ca.1);
-        
+
         self.excluded = [from, to].into_iter().chain(precompile_addrs).chain(auth_addrs).collect();
     }
 }
