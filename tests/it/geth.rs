@@ -7,13 +7,13 @@ use alloy_rpc_types_trace::geth::{
     GethTrace, PreStateConfig, PreStateFrame,
 };
 use revm::{
-    context::{ContextSetters, TxEnv},
-    context_interface::{ContextTr, TransactTo},
-    database::CacheDB,
+    context::{ContextSetters, TxEnv, TxKind},
+    context_interface::ContextTr,
+    database::{CacheDB, SimpleMultiChainDB},
     database_interface::EmptyDB,
     handler::EvmTr,
     inspector::InspectorEvmTr,
-    primitives::hardfork::SpecId,
+    primitives::{hardfork::SpecId, ChainAddress},
     Context, InspectEvm, MainBuilder, MainContext,
 };
 use revm_inspectors::tracing::{MuxInspector, TracingInspector, TracingInspectorConfig};
@@ -52,7 +52,9 @@ fn test_geth_calltracer_logs() {
         }
     }
     */
-    let mut evm = Context::mainnet().with_db(CacheDB::new(EmptyDB::default())).build_mainnet();
+    let mut multi_db = SimpleMultiChainDB::new();
+    multi_db.add_chain(1, CacheDB::new(EmptyDB::default()));
+    let mut evm = Context::mainnet().with_db(multi_db).build_mainnet();
     let code = hex!("608060405234801561001057600080fd5b506103ac806100206000396000f3fe60806040526004361061003f5760003560e01c80630332ed131461014d5780636ae1ad40146101625780638384a00214610177578063de7eb4f31461018c575b60405134815233906000805160206103578339815191529060200160405180910390a2306001600160a01b0316636ae1ad406040518163ffffffff1660e01b8152600401600060405180830381600087803b15801561009d57600080fd5b505af19250505080156100ae575060015b50306001600160a01b0316630332ed136040518163ffffffff1660e01b8152600401600060405180830381600087803b1580156100ea57600080fd5b505af19250505080156100fb575060015b50306001600160a01b0316638384a0026040518163ffffffff1660e01b8152600401600060405180830381600087803b15801561013757600080fd5b505af115801561014b573d6000803e3d6000fd5b005b34801561015957600080fd5b5061014b6101a1565b34801561016e57600080fd5b5061014b610253565b34801561018357600080fd5b5061014b6102b7565b34801561019857600080fd5b5061014b6102dd565b306001600160a01b031663de7eb4f36040518163ffffffff1660e01b8152600401600060405180830381600087803b1580156101dc57600080fd5b505af11580156101f0573d6000803e3d6000fd5b505060405162461bcd60e51b8152602060048201526024808201527f6e6573746564456d6974576974684661696c75726541667465724e6573746564604482015263115b5a5d60e21b6064820152608401915061024a9050565b60405180910390fd5b6040516000815233906000805160206103578339815191529060200160405180910390a260405162461bcd60e51b81526020600482015260156024820152746e6573746564456d6974576974684661696c75726560581b604482015260640161024a565b6040516000815233906000805160206103578339815191529060200160405180910390a2565b6040516000815233906000805160206103578339815191529060200160405180910390a2306001600160a01b0316638384a0026040518163ffffffff1660e01b8152600401600060405180830381600087803b15801561033c57600080fd5b505af1158015610350573d6000803e3d6000fd5b5050505056fef950957d2407bed19dc99b718b46b4ce6090c05589006dfb86fd22c34865b23ea2646970667358221220090a696b9fbd22c7d1cc2a0b6d4a48c32d3ba892480713689a3145b73cfeb02164736f6c63430008130033");
     let deployer = Address::ZERO;
     let addr =
@@ -63,9 +65,9 @@ fn test_geth_calltracer_logs() {
 
     let mut evm = evm.with_inspector(&mut insp);
     evm.set_tx(TxEnv {
-        caller: deployer,
+        caller: ChainAddress(1, deployer),
         gas_limit: 1000000,
-        kind: TransactTo::Call(addr),
+        kind: TxKind::Call(ChainAddress(1, addr)),
         data: Bytes::default(), // call fallback
         nonce: 1,
         ..Default::default()
@@ -138,7 +140,9 @@ fn test_geth_mux_tracer() {
     }
     */
 
-    let mut evm = Context::mainnet().with_db(CacheDB::new(EmptyDB::default())).build_mainnet();
+    let mut multi_db = SimpleMultiChainDB::new();
+    multi_db.add_chain(1, CacheDB::new(EmptyDB::default()));
+    let mut evm = Context::mainnet().with_db(multi_db).build_mainnet();
 
     let code = hex!("608060405234801561001057600080fd5b506103ac806100206000396000f3fe60806040526004361061003f5760003560e01c80630332ed131461014d5780636ae1ad40146101625780638384a00214610177578063de7eb4f31461018c575b60405134815233906000805160206103578339815191529060200160405180910390a2306001600160a01b0316636ae1ad406040518163ffffffff1660e01b8152600401600060405180830381600087803b15801561009d57600080fd5b505af19250505080156100ae575060015b50306001600160a01b0316630332ed136040518163ffffffff1660e01b8152600401600060405180830381600087803b1580156100ea57600080fd5b505af19250505080156100fb575060015b50306001600160a01b0316638384a0026040518163ffffffff1660e01b8152600401600060405180830381600087803b15801561013757600080fd5b505af115801561014b573d6000803e3d6000fd5b005b34801561015957600080fd5b5061014b6101a1565b34801561016e57600080fd5b5061014b610253565b34801561018357600080fd5b5061014b6102b7565b34801561019857600080fd5b5061014b6102dd565b306001600160a01b031663de7eb4f36040518163ffffffff1660e01b8152600401600060405180830381600087803b1580156101dc57600080fd5b505af11580156101f0573d6000803e3d6000fd5b505060405162461bcd60e51b8152602060048201526024808201527f6e6573746564456d6974576974684661696c75726541667465724e6573746564604482015263115b5a5d60e21b6064820152608401915061024a9050565b60405180910390fd5b6040516000815233906000805160206103578339815191529060200160405180910390a260405162461bcd60e51b81526020600482015260156024820152746e6573746564456d6974576974684661696c75726560581b604482015260640161024a565b6040516000815233906000805160206103578339815191529060200160405180910390a2565b6040516000815233906000805160206103578339815191529060200160405180910390a2306001600160a01b0316638384a0026040518163ffffffff1660e01b8152600401600060405180830381600087803b15801561033c57600080fd5b505af1158015610350573d6000803e3d6000fd5b5050505056fef950957d2407bed19dc99b718b46b4ce6090c05589006dfb86fd22c34865b23ea2646970667358221220090a696b9fbd22c7d1cc2a0b6d4a48c32d3ba892480713689a3145b73cfeb02164736f6c63430008130033");
     let deployer = Address::ZERO;
@@ -169,9 +173,9 @@ fn test_geth_mux_tracer() {
     let mut insp = MuxInspector::try_from_config(config.clone()).unwrap();
 
     evm.ctx().set_tx(TxEnv {
-        caller: deployer,
+        caller: ChainAddress(1, deployer),
         gas_limit: 1000000,
-        kind: TransactTo::Call(addr),
+        kind: TxKind::Call(ChainAddress(1, addr)),
         data: Bytes::default(), // call fallback
         nonce: 1,
         ..Default::default()
@@ -183,8 +187,7 @@ fn test_geth_mux_tracer() {
     assert!(res.result.is_success());
 
     let (ctx, inspector) = evm.ctx_inspector();
-    let frame =
-        inspector.try_into_mux_frame(&res, ctx.db_ref(), TransactionInfo::default()).unwrap();
+    let frame = inspector.try_into_mux_frame(&res, ctx.db(), TransactionInfo::default()).unwrap();
 
     assert_eq!(frame.0.len(), 4);
     assert!(frame.0.contains_key(&GethDebugBuiltInTracerType::FourByteTracer));
@@ -244,14 +247,16 @@ fn test_geth_mux_tracer() {
 fn test_geth_inspector_reset() {
     let insp = TracingInspector::new(TracingInspectorConfig::default_geth());
 
+    let mut multi_db = SimpleMultiChainDB::new();
+    multi_db.add_chain(1, CacheDB::new(EmptyDB::default()));
     let context = Context::mainnet()
-        .with_db(CacheDB::new(EmptyDB::default()))
+        .with_db(multi_db)
         .modify_cfg_chained(|cfg| cfg.spec = SpecId::LONDON)
         .modify_tx_chained(|tx| {
-            tx.caller = Address::ZERO;
+            tx.caller = ChainAddress(1, Address::ZERO);
             tx.gas_limit = 1000000;
             tx.gas_price = Default::default();
-            tx.kind = TransactTo::Call(Address::ZERO);
+            tx.kind = TxKind::Call(ChainAddress(1, Address::ZERO));
         });
 
     assert_eq!(insp.traces().nodes().first().unwrap().trace.gas_limit, 0);

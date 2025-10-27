@@ -2,17 +2,17 @@
 
 use alloy_primitives::{hex, Address, U256};
 use revm::{
-    context::TxEnv,
+    context::{TxEnv, TxKind},
     context_interface::{
         result::{ExecutionResult, Output},
-        ContextTr, TransactTo,
+        ContextTr,
     },
-    database::CacheDB,
-    database_interface::EmptyDB,
+    database::{CacheDB, SimpleMultiChainDB},
+    database_interface::{EmptyDB, MultiChainDatabaseCommit},
     handler::EvmTr,
     inspector::InspectorEvmTr,
-    primitives::hardfork::SpecId,
-    Context, DatabaseCommit, ExecuteEvm, InspectEvm, MainBuilder, MainContext,
+    primitives::{hardfork::SpecId, ChainAddress},
+    Context, ExecuteEvm, InspectEvm, MainBuilder, MainContext,
 };
 use revm_inspectors::{
     edge_cov::EdgeCovInspector,
@@ -36,16 +36,19 @@ fn test_edge_coverage() {
     let code = hex!("6080604052348015600f57600080fd5b5060b580601d6000396000f3fe6080604052348015600f57600080fd5b506004361060285760003560e01c8063f42e8cdd14602d575b600080fd5b603c60383660046058565b603e565b005b60005b60ff811015605457816054576001016041565b5050565b600060208284031215606957600080fd5b81358015158114607857600080fd5b939250505056fea2646970667358221220a206d90c473b6930258d5789495c41b79941b5334c47a76b6e618d3571716d5164736f6c634300081c0033");
     let deployer = Address::ZERO;
 
+    let mut multi_db = SimpleMultiChainDB::new();
+    multi_db.add_chain(1, CacheDB::new(EmptyDB::default()));
+
     let ctx = Context::mainnet()
         .modify_cfg_chained(|cfg| cfg.spec = SpecId::LONDON)
         .with_tx(TxEnv {
-            caller: deployer,
+            caller: ChainAddress(1, deployer),
             gas_limit: 1000000,
-            kind: TransactTo::Create,
+            kind: TxKind::Create,
             data: code.into(),
             ..Default::default()
         })
-        .with_db(CacheDB::new(EmptyDB::default()));
+        .with_db(multi_db);
 
     let mut insp = TracingInspector::new(TracingInspectorConfig::default_geth());
 
@@ -60,15 +63,15 @@ fn test_edge_coverage() {
         },
         _ => panic!("Execution failed"),
     };
-    evm.ctx().db().commit(res.state);
+    evm.ctx().db().commit_multi(res.state);
 
-    let acc = evm.ctx().db().load_account(deployer).unwrap();
+    let acc = evm.ctx().db().get_chain_mut(1).unwrap().load_account(deployer).unwrap();
     acc.info.balance = U256::from(u64::MAX);
 
     let tx = TxEnv {
-        caller: deployer,
+        caller: ChainAddress(1, deployer),
         gas_limit: 100000000,
-        kind: TransactTo::Call(addr),
+        kind: TxKind::Call(ChainAddress(1, addr)),
         nonce: 1,
         // 'cast cd "Y(bool)" true'
         data: hex!("f42e8cdd0000000000000000000000000000000000000000000000000000000000000001")
@@ -88,9 +91,9 @@ fn test_edge_coverage() {
 
     evm.inspector().reset();
     evm.set_tx(TxEnv {
-        caller: deployer,
+        caller: ChainAddress(1, deployer),
         gas_limit: 100000000,
-        kind: TransactTo::Call(addr),
+        kind: TxKind::Call(ChainAddress(1, addr)),
         nonce: 1,
         // 'cast cd "Y(bool)" false'
         data: hex!("f42e8cdd0000000000000000000000000000000000000000000000000000000000000000")
