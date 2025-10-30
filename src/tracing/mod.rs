@@ -21,7 +21,7 @@ use revm::{
         CallInput, CallInputs, CallOutcome, CallScheme, CreateInputs, CreateOutcome, Interpreter,
         InterpreterResult,
     },
-    primitives::{hardfork::SpecId, Address, Bytes, Log, B256, U256},
+    primitives::{hardfork::SpecId, Address, Bytes, ChainAddress, Log, B256, U256},
     Inspector, JournalEntry,
 };
 
@@ -264,7 +264,7 @@ impl TracingInspector {
     fn is_precompile_call<CTX: ContextTr<Journal: JournalExt>>(
         &self,
         context: &CTX,
-        to: &Address,
+        to: &ChainAddress,
         value: &U256,
     ) -> bool {
         if context.journal_ref().precompile_addresses().contains(to) {
@@ -321,11 +321,11 @@ impl TracingInspector {
     fn start_trace_on_call<CTX: ContextTr>(
         &mut self,
         context: &mut CTX,
-        address: Address,
+        address: ChainAddress,
         input_data: Bytes,
         value: U256,
         kind: CallKind,
-        caller: Address,
+        caller: ChainAddress,
         gas_limit: u64,
         maybe_precompile: Option<bool>,
     ) {
@@ -346,12 +346,12 @@ impl TracingInspector {
             push_kind,
             CallTrace {
                 depth: context.journal().depth(),
-                address,
+                address: address.1,
                 kind,
                 data: input_data,
                 value,
                 status: None,
-                caller,
+                caller: caller.1,
                 maybe_precompile,
                 gas_limit,
                 steps,
@@ -471,7 +471,7 @@ impl TracingInspector {
             depth: context.journal().depth() as u64,
             pc: interp.bytecode.pc(),
             op,
-            contract: interp.input.target_address(),
+            contract: interp.input.target_address().1,
             stack,
             push_stack: None,
             memory,
@@ -631,7 +631,7 @@ where
         let nonce = context.journal_mut().load_account(inputs.caller).ok()?.info.nonce;
         self.start_trace_on_call(
             context,
-            inputs.created_address(nonce),
+            ChainAddress(1, inputs.created_address(nonce)),
             inputs.init_code.clone(),
             inputs.value,
             inputs.scheme.into(),

@@ -3,9 +3,13 @@ use alloy_primitives::{address, b256, bytes, hex, Address, B256, U256};
 use alloy_sol_types::{sol, SolCall};
 use colorchoice::ColorChoice;
 use revm::{
-    context::TxEnv, context_interface::TransactTo, database::CacheDB, database_interface::EmptyDB,
-    inspector::InspectorEvmTr, primitives::hardfork::SpecId, Context, InspectCommitEvm, InspectEvm,
-    MainBuilder, MainContext,
+    context::{BlockEnv, TxEnv},
+    database::{CacheDB, SimpleMultiChainDB},
+    database_interface::EmptyDB,
+    handler::EvmTr,
+    inspector::InspectorEvmTr,
+    primitives::{hardfork::SpecId, ChainAddress, MultiChainTxKind},
+    Context, InspectCommitEvm, InspectEvm, MainBuilder, MainContext,
 };
 use revm_inspectors::tracing::{
     types::{DecodedCallData, DecodedInternalCall, DecodedTraceStep},
@@ -24,8 +28,14 @@ fn test_trace_printing() {
 
     let base_path = &Path::new(OUT_DIR).join("test_trace_printing");
 
+    let mut multi_db = SimpleMultiChainDB::new();
+    multi_db.add_chain(1, CacheDB::new(EmptyDB::default()));
+
     let mut evm = Context::mainnet()
-        .with_db(CacheDB::new(EmptyDB::default()))
+        .with_db(multi_db)
+        .modify_block_chained(|blocks| {
+            blocks.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
+        })
         .build_mainnet_with_inspector(TracingInspector::new(TracingInspectorConfig::all()));
 
     //let address = evm.deploy(CREATION_CODE.parse().unwrap(), &mut tracer).unwrap();
@@ -44,17 +54,14 @@ fn test_trace_printing() {
     index += 1;
 
     let mut call = |data: Vec<u8>| {
+        evm.ctx().tx.data = data.into();
+        evm.ctx().tx.kind = MultiChainTxKind::Call(ChainAddress(1, address));
+        evm.ctx().tx.gas_priority_fee = None;
+        evm.ctx().tx.nonce = index as u64;
         evm.set_inspector(TracingInspector::new(TracingInspectorConfig::all()));
-        let r = evm
-            .inspect_tx_commit(
-                TxEnv::builder()
-                    .data(data.into())
-                    .kind(TransactTo::Call(address))
-                    .gas_priority_fee(None)
-                    .nonce(index as u64)
-                    .build_fill(),
-            )
-            .unwrap();
+
+        let tx = evm.ctx().tx.clone();
+        let r = evm.inspect_tx_commit(tx).unwrap();
         assert!(r.is_success(), "evm.call reverted: {r:#?}");
 
         assert_traces(base_path, None, Some(index), evm.inspector());
@@ -91,8 +98,14 @@ fn test_trace_printing() {
 fn deploy_fail() {
     let base_path = &Path::new(OUT_DIR).join("deploy_fail");
 
+    let mut multi_db = SimpleMultiChainDB::new();
+    multi_db.add_chain(1, CacheDB::new(EmptyDB::default()));
+
     let mut evm = Context::mainnet()
-        .with_db(CacheDB::new(EmptyDB::default()))
+        .with_db(multi_db)
+        .modify_block_chained(|blocks| {
+            blocks.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
+        })
         .build_mainnet_with_inspector(TracingInspector::new(TracingInspectorConfig::all()));
 
     inspect_deploy_contract(

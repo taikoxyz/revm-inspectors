@@ -1,25 +1,24 @@
 //! Parity tests
 
 use crate::utils::{deploy_contract, inspect_deploy_contract, print_traces};
-use alloy_primitives::{address, hex, map::HashSet, Address, U256};
+use alloy_primitives::{address, hex, map::HashSet, Address, B256, U256};
 use alloy_rpc_types_eth::TransactionInfo;
 use alloy_rpc_types_trace::parity::{
     Action, CallAction, CallType, CreationMethod, SelfdestructAction, TraceType,
 };
 use revm::{
-    context::TxEnv,
+    context::{BlockEnv, ContextSetters, TxEnv},
     context_interface::{
-        block::BlobExcessGasAndPrice,
         result::{ExecutionResult, Output},
-        ContextTr, TransactTo,
+        ContextTr,
     },
-    database::CacheDB,
-    database_interface::EmptyDB,
+    database::{CacheDB, SimpleMultiChainDB},
+    database_interface::{EmptyDB, MultiChainDatabaseCommit},
     handler::EvmTr,
     inspector::InspectorEvmTr,
-    primitives::{eip4844::BLOB_BASE_FEE_UPDATE_FRACTION_CANCUN, hardfork::SpecId},
+    primitives::{hardfork::SpecId, ChainAddress, MultiChainTxKind},
     state::AccountInfo,
-    Context, DatabaseCommit, InspectEvm, MainBuilder, MainContext,
+    Context, InspectEvm, MainBuilder, MainContext,
 };
 use revm_inspectors::tracing::{
     parity::populate_state_diff, TracingInspector, TracingInspectorConfig,
@@ -51,28 +50,44 @@ fn test_parity_selfdestruct(spec_id: SpecId) {
     let deployer = address!("341348115259a8bf69f1f50101c227fced83bac6");
     let value = U256::from(69);
 
-    let mut context =
-        Context::mainnet().with_db(CacheDB::<EmptyDB>::default()).modify_db_chained(|db| {
-            db.insert_account_info(deployer, AccountInfo { balance: value, ..Default::default() });
+    let mut multi_db = SimpleMultiChainDB::new();
+    multi_db.add_chain(1, CacheDB::new(EmptyDB::default()));
+    multi_db
+        .get_chain_mut(1)
+        .unwrap()
+        .insert_account_info(deployer, AccountInfo { balance: value, ..Default::default() });
+    let context = Context::mainnet()
+        .with_db(multi_db)
+        .modify_tx_chained(|tx| tx.value = value)
+        .modify_block_chained(|blocks| {
+            blocks.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
         });
-
-    context.modify_tx(|tx| tx.value = value);
     let mut evm = context.build_mainnet();
     let output = deploy_contract(&mut evm, code.into(), deployer, spec_id);
     let addr = output.created_address().unwrap();
 
+    evm.ctx().tx = TxEnv {
+        caller: ChainAddress(1, deployer),
+        gas_limit: 1000000,
+        kind: MultiChainTxKind::Call(ChainAddress(1, addr)),
+        data: hex!("43d726d6").into(),
+        nonce: 1,
+        value: U256::ZERO,
+        gas_price: 0,
+        chain_id: Some(1),
+        chain_ids: Some(vec![1]),
+        tx_type: 0,
+        access_list: Default::default(),
+        gas_priority_fee: None,
+        max_fee_per_blob_gas: 0,
+        blob_hashes: Default::default(),
+        authorization_list: Default::default(),
+    };
     let mut evm =
         evm.with_inspector(TracingInspector::new(TracingInspectorConfig::default_parity()));
-    let res = evm
-        .inspect_tx(TxEnv {
-            caller: deployer,
-            gas_limit: 1000000,
-            kind: TransactTo::Call(addr),
-            data: hex!("43d726d6").into(),
-            nonce: 1,
-            ..Default::default()
-        })
-        .unwrap();
+
+    let tx = evm.ctx().tx.clone();
+    let res = evm.inspect_tx(tx).unwrap();
     assert!(res.result.is_success(), "{res:#?}");
 
     assert_eq!(evm.inspector().traces().nodes().len(), 1);
@@ -121,9 +136,14 @@ fn test_parity_constructor_selfdestruct() {
 
     let deployer = Address::ZERO;
 
+    let mut multi_db = SimpleMultiChainDB::new();
+    multi_db.add_chain(1, CacheDB::new(EmptyDB::default()));
     let mut evm = Context::mainnet()
-        .with_db(CacheDB::<EmptyDB>::default())
-        .modify_tx_chained(|tx| tx.caller = deployer)
+        .with_db(multi_db)
+        .modify_tx_chained(|tx| tx.caller = ChainAddress(1, deployer))
+        .modify_block_chained(|blocks| {
+            blocks.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
+        })
         .build_mainnet_with_inspector(TracingInspector::new(
             TracingInspectorConfig::default_parity(),
         ));
@@ -135,19 +155,14 @@ fn test_parity_constructor_selfdestruct() {
     print_traces(evm.inspector());
 
     let res = evm
-        .inspect(
-            {
-                TxEnv {
-                    caller: deployer,
-                    gas_limit: 1000000,
-                    kind: TransactTo::Call(addr),
-                    data: hex!("43d726d6").into(),
-                    nonce: 1,
-                    ..Default::default()
-                }
-            },
-            TracingInspector::new(TracingInspectorConfig::default_parity()),
-        )
+        .inspect_tx(TxEnv {
+            caller: ChainAddress(1, deployer),
+            gas_limit: 1000000,
+            kind: MultiChainTxKind::Call(ChainAddress(1, addr)),
+            data: hex!("43d726d6").into(),
+            nonce: 1,
+            ..Default::default()
+        })
         .unwrap();
 
     assert!(res.result.is_success());
@@ -180,35 +195,53 @@ fn test_parity_call_selfdestruct() {
     let deployer = address!("341348115259a8bf69f1f50101c227fced83bac6");
     let value = U256::from(69);
 
+    let mut multi_db = SimpleMultiChainDB::new();
+    multi_db.add_chain(1, CacheDB::new(EmptyDB::default()));
+    multi_db
+        .get_chain_mut(1)
+        .unwrap()
+        .insert_account_info(deployer, AccountInfo { balance: value, ..Default::default() });
     let mut evm = Context::mainnet()
-        .with_db(CacheDB::<EmptyDB>::default())
-        .modify_db_chained(|db| {
-            db.insert_account_info(deployer, AccountInfo { balance: value, ..Default::default() });
-        })
+        .with_db(multi_db)
         .modify_tx_chained(|tx| {
-            tx.caller = deployer;
+            tx.caller = ChainAddress(1, deployer);
             tx.value = value;
+        })
+        .modify_block_chained(|blocks| {
+            blocks.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
         })
         .build_mainnet();
 
     let to =
         deploy_contract(&mut evm, code.into(), deployer, SpecId::LONDON).created_address().unwrap();
 
-    evm.ctx().db_mut().cache.accounts.get_mut(&to).unwrap().info.balance = balance;
+    // Add balance to the deployed contract without overwriting the code
+    let acc = evm.ctx().db_mut().get_chain_mut(1).unwrap().load_account(to).unwrap();
+    acc.info.balance = balance;
+
+    evm.ctx().tx = TxEnv {
+        caller: ChainAddress(1, caller),
+        gas_limit: 100000000,
+        kind: MultiChainTxKind::Call(ChainAddress(1, to)),
+        data: input.to_vec().into(),
+        nonce: 0,
+        value: U256::ZERO,
+        gas_price: 0,
+        chain_id: Some(1),
+        chain_ids: Some(vec![1]),
+        tx_type: 0,
+        access_list: Default::default(),
+        gas_priority_fee: None,
+        max_fee_per_blob_gas: 0,
+        blob_hashes: Default::default(),
+        authorization_list: Default::default(),
+    };
 
     let mut evm =
         evm.with_inspector(TracingInspector::new(TracingInspectorConfig::default_parity()));
 
-    let res = evm
-        .inspect_tx(TxEnv {
-            caller,
-            gas_limit: 100000000,
-            kind: TransactTo::Call(to),
-            data: input.to_vec().into(),
-            nonce: 0,
-            ..Default::default()
-        })
-        .unwrap();
+    let tx = evm.ctx().tx.clone();
+    let res = evm.inspect_tx(tx).unwrap();
     match &res.result {
         ExecutionResult::Success { output, .. } => match output {
             Output::Call(_) => {}
@@ -216,12 +249,16 @@ fn test_parity_call_selfdestruct() {
         },
         err => panic!("Execution failed: {err:?}"),
     }
-    evm.ctx().db_mut().commit(res.state);
+    evm.ctx().db_mut().commit_multi(res.state);
 
     let traces = evm
         .into_inspector()
         .into_parity_builder()
         .into_trace_results(&res.result, &HashSet::from_iter([TraceType::Trace]));
+    eprintln!("parity::test_parity_call_selfdestruct: traces.trace.len() = {}", traces.trace.len());
+    for (i, trace) in traces.trace.iter().enumerate() {
+        eprintln!("  Trace {}: {:?}", i, trace.action);
+    }
     assert_eq!(traces.trace.len(), 2);
 
     assert_eq!(
@@ -251,34 +288,46 @@ fn test_parity_call_selfdestruct_create() {
 
     let value = U256::from(1);
 
-    let evm = Context::mainnet()
-        .with_db(CacheDB::<EmptyDB>::default())
-        .modify_db_chained(|db| {
-            db.insert_account_info(
-                caller,
-                AccountInfo { balance, nonce: 24, ..Default::default() },
-            );
-        })
+    let mut multi_db = SimpleMultiChainDB::new();
+    multi_db.add_chain(1, CacheDB::new(EmptyDB::default()));
+    multi_db
+        .get_chain_mut(1)
+        .unwrap()
+        .insert_account_info(caller, AccountInfo { balance, nonce: 24, ..Default::default() });
+    let mut evm = Context::mainnet()
+        .with_db(multi_db)
         .modify_tx_chained(|tx| {
-            tx.caller = caller;
+            tx.caller = ChainAddress(1, caller);
             tx.value = value;
         })
+        .modify_block_chained(|blocks| {
+            blocks.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
+        })
         .build_mainnet();
+
+    evm.ctx().tx = TxEnv {
+        caller: ChainAddress(1, caller),
+        gas_limit: 100000000,
+        kind: MultiChainTxKind::Create,
+        data: code.to_vec().into(),
+        nonce: 24,
+        value: U256::from(1),
+        gas_price: 0,
+        chain_id: Some(1),
+        chain_ids: Some(vec![1]),
+        tx_type: 0,
+        access_list: Default::default(),
+        gas_priority_fee: None,
+        max_fee_per_blob_gas: 0,
+        blob_hashes: Default::default(),
+        authorization_list: Default::default(),
+    };
 
     let mut evm =
         evm.with_inspector(TracingInspector::new(TracingInspectorConfig::default_parity()));
 
-    let res = evm
-        .inspect_tx(TxEnv {
-            caller,
-            gas_limit: 100000000,
-            kind: TransactTo::Create,
-            data: code.to_vec().into(),
-            nonce: 24,
-            value: U256::from(1),
-            ..Default::default()
-        })
-        .unwrap();
+    let tx = evm.ctx().tx.clone();
+    let res = evm.inspect_tx(tx).unwrap();
     match &res.result {
         ExecutionResult::Success { output, .. } => match output {
             Output::Create(_, _) => {}
@@ -286,7 +335,7 @@ fn test_parity_call_selfdestruct_create() {
         },
         err => panic!("Execution failed: {err:?}"),
     }
-    evm.ctx().db_mut().commit(res.state);
+    evm.ctx().db_mut().commit_multi(res.state);
 
     let traces = evm
         .into_inspector()
@@ -324,32 +373,31 @@ fn test_parity_statediff_blob_commit() {
     let caller = address!("283b5b7d75e3e6b84b8e2161e8a468d733bbbe8d");
     let to = address!("15dd773dad3f630773a0e771e9b221f4c8b9b939");
 
-    let mut db = CacheDB::new(EmptyDB::default());
-    db.insert_account_info(
+    let mut multi_db = SimpleMultiChainDB::new();
+    multi_db.add_chain(1, CacheDB::new(EmptyDB::default()));
+    multi_db.get_chain_mut(1).unwrap().insert_account_info(
         caller,
         AccountInfo { balance: U256::from(u64::MAX), ..Default::default() },
     );
 
     let trace_types = HashSet::from_iter([TraceType::StateDiff]);
     let mut evm = Context::mainnet()
-        .with_db(db.clone())
+        .with_db(multi_db.clone())
         .modify_cfg_chained(|cfg| {
             cfg.spec = SpecId::CANCUN;
         })
-        .modify_block_chained(|b| {
-            b.basefee = 100;
-            b.blob_excess_gas_and_price =
-                Some(BlobExcessGasAndPrice::new(100, BLOB_BASE_FEE_UPDATE_FRACTION_CANCUN));
+        .modify_cfg_chained(|cfg| {
+            cfg.spec = SpecId::CANCUN;
         })
-        .build_mainnet_with_inspector(TracingInspector::new(
-            TracingInspectorConfig::from_parity_config(&trace_types),
-        ));
-
-    let res = evm
-        .inspect_tx(TxEnv {
-            caller,
+        .modify_block_chained(|blocks| {
+            let block = blocks.entry(1).or_insert_with(BlockEnv::default);
+            block.basefee = 100;
+            block.prevrandao = Some(B256::ZERO);
+        })
+        .with_tx(TxEnv {
+            caller: ChainAddress(1, caller),
             gas_limit: 1000000,
-            kind: TransactTo::Call(to),
+            kind: MultiChainTxKind::Call(ChainAddress(1, to)),
             gas_price: 150,
             blob_hashes: vec!["0x01af2fd94f17364bc8ef371c4c90c3a33855ff972d10b9c03d0445b3fca063ea"
                 .parse()
@@ -357,12 +405,18 @@ fn test_parity_statediff_blob_commit() {
             max_fee_per_blob_gas: 1000000000,
             ..Default::default()
         })
-        .unwrap();
+        .build_mainnet_with_inspector(TracingInspector::new(
+            TracingInspectorConfig::from_parity_config(&trace_types),
+        ));
+
+    let tx = evm.ctx().tx.clone();
+    let res = evm.inspect_tx(tx).unwrap();
     let mut full_trace =
         evm.inspector.into_parity_builder().into_trace_results(&res.result, &trace_types);
 
     let state_diff = full_trace.state_diff.as_mut().unwrap();
-    populate_state_diff(state_diff, db, res.state.iter()).unwrap();
+    populate_state_diff(state_diff, &multi_db, res.state.iter().map(|(addr, acc)| (&addr.1, acc)))
+        .unwrap();
 
     assert!(!state_diff.contains_key(&to));
     assert!(state_diff.contains_key(&caller));
@@ -393,16 +447,28 @@ fn test_parity_delegatecall_selfdestruct() {
 
     let deployer = address!("341348115259a8bf69f1f50101c227fced83bac6");
 
-    let mut evm = Context::mainnet().with_db(CacheDB::<EmptyDB>::default()).build_mainnet();
+    let mut multi_db = SimpleMultiChainDB::new();
+    multi_db.add_chain(1, CacheDB::new(EmptyDB::default()));
+    let mut evm = Context::mainnet()
+        .with_db(multi_db)
+        .modify_block_chained(|blocks| {
+            blocks.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
+        })
+        .build_mainnet();
+
+    // Fund the deployer account
+    evm.ctx().db_mut().get_chain_mut(1).unwrap().insert_account_info(
+        deployer,
+        AccountInfo { balance: U256::from(u64::MAX), nonce: 0, ..Default::default() },
+    );
 
     // Deploy DelegateCall contract
-    let delegate_addr =
-        deploy_contract(&mut evm, delegate_code.into(), Address::ZERO, SpecId::PRAGUE)
-            .created_address()
-            .unwrap();
+    let delegate_addr = deploy_contract(&mut evm, delegate_code.into(), deployer, SpecId::PRAGUE)
+        .created_address()
+        .unwrap();
 
     // Deploy SelfDestructTarget contract
-    let target_addr = deploy_contract(&mut evm, target_code.into(), Address::ZERO, SpecId::PRAGUE)
+    let target_addr = deploy_contract(&mut evm, target_code.into(), deployer, SpecId::PRAGUE)
         .created_address()
         .unwrap();
 
@@ -412,19 +478,29 @@ fn test_parity_delegatecall_selfdestruct() {
     input_data.extend_from_slice(target_addr.as_slice());
 
     // Call DelegateCall contract with SelfDestructTarget address
+    // After two deployments from the same deployer, nonce should be 2
+    evm.ctx().tx = TxEnv {
+        caller: ChainAddress(1, deployer),
+        gas_limit: 1000000,
+        kind: MultiChainTxKind::Call(ChainAddress(1, delegate_addr)),
+        data: input_data.into(),
+        nonce: 2,
+        value: U256::ZERO,
+        gas_price: 0,
+        chain_id: Some(1),
+        chain_ids: Some(vec![1]),
+        tx_type: 0,
+        access_list: Default::default(),
+        gas_priority_fee: None,
+        max_fee_per_blob_gas: 0,
+        blob_hashes: Default::default(),
+        authorization_list: Default::default(),
+    };
     let mut evm =
         evm.with_inspector(TracingInspector::new(TracingInspectorConfig::default_parity()));
 
-    let res = evm
-        .inspect_tx(TxEnv {
-            caller: deployer,
-            gas_limit: 1000000,
-            kind: TransactTo::Call(delegate_addr),
-            data: input_data.into(),
-            nonce: 0,
-            ..Default::default()
-        })
-        .unwrap();
+    let tx = evm.ctx().tx.clone();
+    let res = evm.inspect_tx(tx).unwrap();
     assert!(res.result.is_success());
 
     let traces = evm

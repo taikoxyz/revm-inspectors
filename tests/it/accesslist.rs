@@ -1,9 +1,15 @@
 //! Accesslist tests
 
-use alloy_primitives::{address, hex};
+use alloy_primitives::{address, hex, B256, U256};
 use revm::{
-    bytecode::Bytecode, context::TxEnv, context_interface::TransactTo, database::CacheDB,
-    database_interface::EmptyDB, state::AccountInfo, Context, InspectEvm, MainBuilder, MainContext,
+    bytecode::Bytecode,
+    context::{BlockEnv, TxEnv},
+    database::{CacheDB, SimpleMultiChainDB},
+    database_interface::EmptyDB,
+    handler::EvmTr,
+    primitives::{ChainAddress, MultiChainTxKind},
+    state::AccountInfo,
+    Context, InspectEvm, MainBuilder, MainContext,
 };
 use revm_inspectors::access_list::AccessListInspector;
 
@@ -12,36 +18,49 @@ fn test_access_list_precompile() {
     /*
     contract Storage {
        function recoverSignature() public view returns (address) {
-            address r = ecrecover(bytes32(0), 0, 0, 0);
+            address r = ecrecover(bytes32(0), 0, 0);
         }
     }
     */
 
-    let code = hex!("608060405234801561000f575f80fd5b5060043610610029575f3560e01c8063a53997051461002d575b5f80fd5b61003561004b565b60405161004291906100e0565b60405180910390f35b5f8060015f801b5f805f6040515f8152602001604052604051610071949392919061019a565b6020604051602081039080840390855afa158015610091573d5f803e3d5ffd5b5050506020604051035190505090565b5f73ffffffffffffffffffffffffffffffffffffffff82169050919050565b5f6100ca826100a1565b9050919050565b6100da816100c0565b82525050565b5f6020820190506100f35f8301846100d1565b92915050565b5f819050919050565b61010b816100f9565b82525050565b5f819050919050565b5f60ff82169050919050565b5f819050919050565b5f61014961014461013f84610111565b610126565b61011a565b9050919050565b6101598161012f565b82525050565b5f815f1b9050919050565b5f61018461017f61017a84610111565b61015f565b6100f9565b9050919050565b6101948161016a565b82525050565b5f6080820190506101ad5f830187610102565b6101ba6020830186610150565b6101c7604083018561018b565b6101d4606083018461018b565b9594505050505056fea26469706673582212208a19ad28dde042d3a2dd7ca8800d08fed7eb780b9778cd88f1e5ab44407532de64736f6c634300081a0033");
+    let code = hex!("608060405234801561000f575f80fd5b5060dd80601a5f395ff3fe608060405260043610601b575f3560e01c8063a53997051461001f575b5f80fd5b602e602a3660046074565b6030565b005b6040518181526001600160a01b0383169033907fddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef9060200160405180910390a35050565b5f80604083850312156084575f80fd5b82356001600160a01b03811681146099575f80fd5b94602093909301359350505056fea2646970667358221220d81408f997c5f148e7d6afc66ccc7cda17a38396925363f11993fa885b70729b64736f6c63430008190033");
 
     let account = address!("341348115259a8bf69f1f50101c227fced83bac6");
     let caller = address!("341348115259a8bf69f1f50101c227fced83bac5");
 
-    let context =
-        Context::mainnet().with_db(CacheDB::<EmptyDB>::default()).modify_db_chained(|db| {
-            db.insert_account_info(
-                account,
-                AccountInfo { code: Some(Bytecode::new_raw(code.into())), ..Default::default() },
-            );
-        });
+    let mut multi_db = SimpleMultiChainDB::new();
+    multi_db.add_chain(1, CacheDB::new(EmptyDB::default()));
+    multi_db.get_chain_mut(1).unwrap().insert_account_info(
+        account,
+        AccountInfo { code: Some(Bytecode::new_raw(code.into())), ..Default::default() },
+    );
 
+    let context = Context::mainnet().with_db(multi_db).modify_block_chained(|blocks| {
+        blocks.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
+    });
+    let mut evm = context.build_mainnet();
+
+    evm.ctx().tx = TxEnv {
+        caller: ChainAddress(1, caller),
+        gas_limit: 1000000,
+        kind: MultiChainTxKind::Call(ChainAddress(1, account)),
+        data: hex!("a5399705").into(),
+        nonce: 0,
+        value: U256::ZERO,
+        gas_price: 0,
+        chain_id: Some(1),
+        chain_ids: Some(vec![1]),
+        tx_type: 0,
+        access_list: Default::default(),
+        gas_priority_fee: None,
+        max_fee_per_blob_gas: 0,
+        blob_hashes: Default::default(),
+        authorization_list: Default::default(),
+    };
     let mut accesslist = AccessListInspector::default();
-    let mut evm = context.build_mainnet().with_inspector(&mut accesslist);
-    let res = evm
-        .inspect_tx(TxEnv {
-            caller,
-            gas_limit: 1000000,
-            kind: TransactTo::Call(account),
-            data: hex!("a5399705").into(),
-            nonce: 0,
-            ..Default::default()
-        })
-        .unwrap();
+    let mut evm = evm.with_inspector(&mut accesslist);
+    let tx = evm.ctx().tx.clone();
+    let res = evm.inspect_tx(tx).unwrap();
     assert!(res.result.is_success(), "{res:#?}");
 
     let erecover = address!("0x0000000000000000000000000000000000000001");

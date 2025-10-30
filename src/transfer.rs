@@ -2,10 +2,11 @@ use alloc::{vec, vec::Vec};
 use alloy_primitives::{address, b256, Address, Log, LogData, B256, U256};
 use alloy_sol_types::SolValue;
 use revm::{
-    context::JournalTr,
+    context::{JournalTr, MultiChainDatabase},
     context_interface::ContextTr,
     interpreter::{CallInputs, CallOutcome, CreateInputs, CreateOutcome, CreateScheme},
-    Database, Inspector,
+    primitives::ChainAddress,
+    Inspector,
 };
 
 /// Sender of ETH transfer log per `eth_simulateV1` spec.
@@ -66,10 +67,10 @@ impl TransferInspector {
         self.transfers.iter()
     }
 
-    fn on_transfer<DB: Database, JOURNAL: JournalTr<Database = DB>>(
+    fn on_transfer<DB: MultiChainDatabase, JOURNAL: JournalTr<Database = DB>>(
         &mut self,
-        from: Address,
-        to: Address,
+        from: ChainAddress,
+        to: ChainAddress,
         value: U256,
         kind: TransferKind,
         journaled_state: &mut JOURNAL,
@@ -85,8 +86,8 @@ impl TransferInspector {
         self.transfers.push(TransferOperation { kind, from, to, value });
 
         if self.insert_logs {
-            let from = B256::from_slice(&from.abi_encode());
-            let to = B256::from_slice(&to.abi_encode());
+            let from = B256::from_slice(&from.1.abi_encode());
+            let to = B256::from_slice(&to.1.abi_encode());
             let data = value.abi_encode();
 
             journaled_state.log(Log {
@@ -100,6 +101,7 @@ impl TransferInspector {
 impl<CTX> Inspector<CTX> for TransferInspector
 where
     CTX: ContextTr,
+    <CTX as ContextTr>::Db: MultiChainDatabase,
 {
     fn call(&mut self, context: &mut CTX, inputs: &mut CallInputs) -> Option<CallOutcome> {
         if let Some(value) = inputs.transfer_value() {
@@ -117,7 +119,7 @@ where
 
     fn create(&mut self, context: &mut CTX, inputs: &mut CreateInputs) -> Option<CreateOutcome> {
         let nonce = context.journal_mut().load_account(inputs.caller).ok()?.data.info.nonce;
-        let address = inputs.created_address(nonce);
+        let address = ChainAddress(1, inputs.created_address(nonce));
 
         let kind = match inputs.scheme {
             CreateScheme::Create => TransferKind::Create,
@@ -133,8 +135,8 @@ where
     fn selfdestruct(&mut self, contract: Address, target: Address, value: U256) {
         self.transfers.push(TransferOperation {
             kind: TransferKind::SelfDestruct,
-            from: contract,
-            to: target,
+            from: ChainAddress(1, contract),
+            to: ChainAddress(1, target),
             value,
         });
     }
@@ -146,9 +148,9 @@ pub struct TransferOperation {
     /// Source of the transfer call.
     pub kind: TransferKind,
     /// Sender of the transfer.
-    pub from: Address,
+    pub from: ChainAddress,
     /// Receiver of the transfer.
-    pub to: Address,
+    pub to: ChainAddress,
     /// Value of the transfer.
     pub value: U256,
 }

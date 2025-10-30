@@ -1,16 +1,18 @@
-use alloy_primitives::{Address, Bytes};
+use alloy_primitives::{Address, Bytes, B256, U256};
 use colorchoice::ColorChoice;
 use revm::{
     context::{BlockEnv, CfgEnv, Evm, TxEnv},
     context_interface::{
         result::{ExecutionResult, HaltReason},
-        TransactTo,
+        ContextTr,
     },
+    database_interface::{MultiChainDatabase, MultiChainDatabaseCommit},
     handler::{instructions::EthInstructions, EthFrame, EthPrecompiles, EvmTr},
     interpreter::interpreter::EthInterpreter,
-    primitives::hardfork::SpecId,
-    Context, Database, DatabaseCommit, ExecuteCommitEvm, InspectCommitEvm, Inspector, Journal,
+    primitives::{hardfork::SpecId, ChainAddress, MultiChainTxKind},
+    Context, ExecuteCommitEvm, InspectCommitEvm, InspectEvm, Inspector, Journal,
 };
+
 use revm_inspectors::tracing::{TraceWriter, TraceWriterConfig, TracingInspector};
 
 pub type ContextDb<DB> = Context<BlockEnv, TxEnv, CfgEnv, DB, Journal<DB>, ()>;
@@ -39,48 +41,86 @@ pub type EvmDb<DB, INSP> = Evm<
 >;
 
 /// Deploys a contract with the given code and deployer address.
-pub fn deploy_contract<DB: Database + DatabaseCommit>(
+/// This function assumes the deployer account already has proper balance and nonce tracking
+pub fn deploy_contract<DB: MultiChainDatabase + MultiChainDatabaseCommit>(
     evm: &mut EvmDb<DB, ()>,
     code: Bytes,
     deployer: Address,
     spec: SpecId,
 ) -> ExecutionResult<HaltReason> {
-    evm.ctx().modify_tx(|tx| {
-        tx.caller = deployer;
-        tx.gas_limit = 1000000;
-        tx.kind = TransactTo::Create;
-        tx.data = code;
-    });
-    evm.ctx().modify_cfg(|cfg| cfg.spec = spec);
+    // Try to get current nonce, but we can't access it generically
+    // The caller should ensure proper nonce is set before calling
+    // For first deployment, caller should use nonce 0
+    // For subsequent deployments, nonce should be incremented
+    let current_nonce = if evm.ctx().tx.caller.1 == deployer {
+        // Same deployer, increment nonce
+        evm.ctx().tx.nonce
+    } else {
+        // Different deployer or first deployment, start from 0
+        0
+    };
 
-    let out = evm.replay_commit().expect("Expect to be executed");
-    evm.modify_tx(|tx| {
-        tx.nonce += 1;
-    });
+    evm.ctx().tx.caller = ChainAddress(1, deployer);
+    evm.ctx().tx.gas_limit = 1000000;
+    evm.ctx().tx.kind = MultiChainTxKind::Create;
+    evm.ctx().tx.data = code;
+    evm.ctx().tx.nonce = current_nonce;
+    evm.ctx().cfg.spec = spec;
+
+    // Set prevrandao for post-Merge specs
+    if spec >= SpecId::MERGE {
+        use revm::context::BlockEnv;
+        evm.ctx().block.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
+    }
+
+    let tx = evm.ctx().tx.clone();
+    let out = evm.transact_commit(tx).expect("Expect to be executed");
+    // Increment nonce for next deployment with same deployer
+    evm.ctx().tx.nonce += 1;
     out
 }
 
 /// Deploys a contract with the given code and deployer address.
-pub fn inspect_deploy_contract<DB: Database + DatabaseCommit, INSP: Inspector<ContextDb<DB>>>(
+pub fn inspect_deploy_contract<
+    DB: MultiChainDatabase + MultiChainDatabaseCommit,
+    INSP: Inspector<ContextDb<DB>>,
+>(
     evm: &mut EvmDb<DB, INSP>,
     code: Bytes,
     deployer: Address,
     spec: SpecId,
 ) -> ExecutionResult<HaltReason> {
-    evm.ctx().modify_cfg(|cfg| cfg.spec = spec);
+    evm.ctx().cfg.spec = spec;
+
+    // Set prevrandao for post-Merge specs
+    if spec >= SpecId::MERGE {
+        use revm::context::BlockEnv;
+        evm.ctx().block.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
+    }
+
+    // Same logic as deploy_contract - track nonce based on deployer
+    let current_nonce = if evm.ctx().tx.caller.1 == deployer { evm.ctx().tx.nonce } else { 0 };
 
     let output = evm
         .inspect_tx_commit(TxEnv {
-            caller: deployer,
+            caller: ChainAddress(1, deployer),
             gas_limit: 1000000,
-            kind: TransactTo::Create,
+            kind: MultiChainTxKind::Create,
             data: code,
-            ..Default::default()
+            nonce: current_nonce,
+            value: U256::ZERO,
+            gas_price: 0,
+            chain_id: Some(1),
+            chain_ids: Some(vec![1]),
+            tx_type: 0,
+            access_list: Default::default(),
+            gas_priority_fee: None,
+            max_fee_per_blob_gas: 0,
+            blob_hashes: Default::default(),
+            authorization_list: Default::default(),
         })
         .expect("Expect to be executed");
 
-    evm.ctx().modify_tx(|tx| {
-        tx.nonce += 1;
-    });
+    evm.ctx().tx.nonce += 1;
     output
 }
