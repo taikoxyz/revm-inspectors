@@ -38,9 +38,13 @@ fn test_edge_coverage() {
 
     let mut multi_db = SimpleMultiChainDB::new();
     multi_db.add_chain(1, CacheDB::new(EmptyDB::default()));
+    multi_db.add_chain(0, CacheDB::new(EmptyDB::default()));
 
     let ctx = Context::mainnet()
-        .modify_cfg_chained(|cfg| cfg.spec = SpecId::LONDON)
+        .modify_cfg_chained(|cfg| {
+            cfg.chain_id = 1;
+            cfg.spec = SpecId::LONDON;
+        })
         .with_db(multi_db)
         .modify_block_chained(|blocks| {
             blocks.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);

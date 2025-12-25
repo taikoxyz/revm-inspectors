@@ -30,14 +30,18 @@ fn test_access_list_precompile() {
 
     let mut multi_db = SimpleMultiChainDB::new();
     multi_db.add_chain(1, CacheDB::new(EmptyDB::default()));
+    multi_db.add_chain(0, CacheDB::new(EmptyDB::default()));
     multi_db.get_chain_mut(1).unwrap().insert_account_info(
         account,
         AccountInfo { code: Some(Bytecode::new_raw(code.into())), ..Default::default() },
     );
 
-    let context = Context::mainnet().with_db(multi_db).modify_block_chained(|blocks| {
-        blocks.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
-    });
+    let context = Context::mainnet()
+        .with_db(multi_db)
+        .modify_cfg_chained(|cfg| cfg.chain_id = 1)
+        .modify_block_chained(|blocks| {
+            blocks.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
+        });
     let mut evm = context.build_mainnet();
 
     evm.ctx().tx = TxEnv {

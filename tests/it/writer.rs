@@ -30,9 +30,11 @@ fn test_trace_printing() {
 
     let mut multi_db = SimpleMultiChainDB::new();
     multi_db.add_chain(1, CacheDB::new(EmptyDB::default()));
+    multi_db.add_chain(0, CacheDB::new(EmptyDB::default()));
 
     let mut evm = Context::mainnet()
         .with_db(multi_db)
+        .modify_cfg_chained(|cfg| cfg.chain_id = 1)
         .modify_block_chained(|blocks| {
             blocks.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
         })
@@ -100,9 +102,11 @@ fn deploy_fail() {
 
     let mut multi_db = SimpleMultiChainDB::new();
     multi_db.add_chain(1, CacheDB::new(EmptyDB::default()));
+    multi_db.add_chain(0, CacheDB::new(EmptyDB::default()));
 
     let mut evm = Context::mainnet()
         .with_db(multi_db)
+        .modify_cfg_chained(|cfg| cfg.chain_id = 1)
         .modify_block_chained(|blocks| {
             blocks.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
         })
