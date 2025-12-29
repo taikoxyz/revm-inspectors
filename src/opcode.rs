@@ -154,7 +154,8 @@ mod tests {
         database_interface::EmptyDB,
         interpreter::{interpreter::ExtBytecode, InputsImpl, SharedMemory},
         primitives::{hardfork::SpecId, Bytes},
-        Context, MainContext,
+        Context,
+        MainContext,
     };
 
     #[test]
@@ -171,15 +172,10 @@ mod tests {
             false,
             SpecId::default(),
             u64::MAX,
-            1, // chain_id
-            revm::primitives::ExecutionMode::L2,
-            revm::primitives::gwyneth_forwarder::GwynethSupport::NotSupported,
         );
         let db = CacheDB::new(EmptyDB::default());
-        let mut multi_db = revm::database::SimpleMultiChainDB::new();
-        multi_db.add_chain(1, db); // Chain ID 1 for mainnet
 
-        let mut context = Context::mainnet().with_db(multi_db);
+        let mut context = Context::mainnet().with_db(db);
         for _ in &opcodes {
             opcode_counter.step(&mut interpreter, &mut context);
         }
@@ -206,15 +202,10 @@ mod tests {
             false,
             SpecId::default(),
             u64::MAX,
-            1, // chain_id
-            revm::primitives::ExecutionMode::L2,
-            revm::primitives::gwyneth_forwarder::GwynethSupport::NotSupported,
         );
         let db = CacheDB::new(EmptyDB::default());
-        let mut multi_db = revm::database::SimpleMultiChainDB::new();
-        multi_db.add_chain(1, db); // Chain ID 1 for mainnet
 
-        let mut context = Context::mainnet().with_db(multi_db);
+        let mut context = Context::mainnet().with_db(db);
         for _ in opcodes.iter() {
             opcode_counter.step(&mut interpreter, &mut context);
         }

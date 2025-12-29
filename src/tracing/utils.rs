@@ -8,7 +8,7 @@ use alloc::{
 use alloy_primitives::{hex, Bytes};
 use alloy_sol_types::{ContractError, GenericRevertReason};
 use revm::{
-    database_interface::MultiChainDatabaseRef,
+    database_interface::DatabaseRef,
     interpreter::InstructionResult,
     primitives::{hardfork::SpecId, KECCAK_EMPTY},
 };
@@ -100,7 +100,7 @@ pub(crate) fn gas_used(spec: SpecId, spent: u64, refunded: u64) -> u64 {
 ///
 /// Returns None if the code hash is the KECCAK_EMPTY hash
 #[inline]
-pub(crate) fn load_account_code<DB: MultiChainDatabaseRef>(
+pub(crate) fn load_account_code<DB: DatabaseRef>(
     db: DB,
     db_acc: &revm::state::AccountInfo,
 ) -> Option<Bytes> {
@@ -108,8 +108,7 @@ pub(crate) fn load_account_code<DB: MultiChainDatabaseRef>(
         if db_acc.code_hash == KECCAK_EMPTY {
             None
         } else {
-            // Use chain ID 1 for mainnet
-            db.code_by_hash_ref_multi(1, db_acc.code_hash).ok().map(|code| code.original_bytes())
+            db.code_by_hash_ref(db_acc.code_hash).ok().map(|code| code.original_bytes())
         }
     })
 }

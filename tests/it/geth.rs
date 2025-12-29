@@ -7,13 +7,13 @@ use alloy_rpc_types_trace::geth::{
     GethTrace, PreStateConfig, PreStateFrame,
 };
 use revm::{
-    context::{BlockEnv, TxEnv},
+    context::TxEnv,
     context_interface::ContextTr,
-    database::{CacheDB, SimpleMultiChainDB},
+    database::CacheDB,
     database_interface::EmptyDB,
     handler::EvmTr,
     inspector::InspectorEvmTr,
-    primitives::{hardfork::SpecId, ChainAddress, MultiChainTxKind},
+    primitives::{hardfork::SpecId, TxKind},
     Context, InspectEvm, MainBuilder, MainContext,
 };
 use revm_inspectors::tracing::{MuxInspector, TracingInspector, TracingInspectorConfig};
@@ -52,21 +52,17 @@ fn test_geth_calltracer_logs() {
         }
     }
     */
-    let mut multi_db = SimpleMultiChainDB::new();
-    multi_db.add_chain(1, CacheDB::new(EmptyDB::default()));
-    multi_db.add_chain(0, CacheDB::new(EmptyDB::default()));
+    let db = CacheDB::new(EmptyDB::default());
     let deployer = Address::ZERO;
     let mut evm = Context::mainnet()
-        .with_db(multi_db)
+        .with_db(db)
         .modify_cfg_chained(|cfg| cfg.chain_id = 1)
-        .modify_tx_chained(|tx| tx.caller = ChainAddress(1, deployer))
-        .modify_block_chained(|blocks| {
-            blocks.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
-        })
+        .modify_tx_chained(|tx| tx.caller = deployer)
+        .modify_block_chained(|block| block.prevrandao = Some(B256::ZERO))
         .build_mainnet();
     let code = hex!("608060405234801561001057600080fd5b506103ac806100206000396000f3fe60806040526004361061003f5760003560e01c80630332ed131461014d5780636ae1ad40146101625780638384a00214610177578063de7eb4f31461018c575b60405134815233906000805160206103578339815191529060200160405180910390a2306001600160a01b0316636ae1ad406040518163ffffffff1660e01b8152600401600060405180830381600087803b15801561009d57600080fd5b505af19250505080156100ae575060015b50306001600160a01b0316630332ed136040518163ffffffff1660e01b8152600401600060405180830381600087803b1580156100ea57600080fd5b505af19250505080156100fb575060015b50306001600160a01b0316638384a0026040518163ffffffff1660e01b8152600401600060405180830381600087803b15801561013757600080fd5b505af115801561014b573d6000803e3d6000fd5b005b34801561015957600080fd5b5061014b6101a1565b34801561016e57600080fd5b5061014b610253565b34801561018357600080fd5b5061014b6102b7565b34801561019857600080fd5b5061014b6102dd565b306001600160a01b031663de7eb4f36040518163ffffffff1660e01b8152600401600060405180830381600087803b1580156101dc57600080fd5b505af11580156101f0573d6000803e3d6000fd5b505060405162461bcd60e51b8152602060048201526024808201527f6e6573746564456d6974576974684661696c75726541667465724e6573746564604482015263115b5a5d60e21b6064820152608401915061024a9050565b60405180910390fd5b6040516000815233906000805160206103578339815191529060200160405180910390a260405162461bcd60e51b81526020600482015260156024820152746e6573746564456d6974576974684661696c75726560581b604482015260640161024a565b6040516000815233906000805160206103578339815191529060200160405180910390a2565b6040516000815233906000805160206103578339815191529060200160405180910390a2306001600160a01b0316638384a0026040518163ffffffff1660e01b8152600401600060405180830381600087803b15801561033c57600080fd5b505af1158015610350573d6000803e3d6000fd5b5050505056fef950957d2407bed19dc99b718b46b4ce6090c05589006dfb86fd22c34865b23ea2646970667358221220090a696b9fbd22c7d1cc2a0b6d4a48c32d3ba892480713689a3145b73cfeb02164736f6c63430008130033");
     // Fund the deployer account BEFORE deployment
-    let acc = evm.ctx().db_mut().get_chain_mut(1).unwrap().load_account(deployer).unwrap();
+    let acc = evm.ctx().db_mut().load_account(deployer).unwrap();
     acc.info.balance = U256::from(u64::MAX);
 
     let addr =
@@ -75,7 +71,7 @@ fn test_geth_calltracer_logs() {
     eprintln!("test_geth_calltracer_logs: Deployed contract at {:?}", addr);
 
     // Check that the contract was actually deployed
-    let deployed_acc = evm.ctx().db_mut().get_chain_mut(1).unwrap().load_account(addr).unwrap();
+    let deployed_acc = evm.ctx().db_mut().load_account(addr).unwrap();
     eprintln!("Deployed account info: {:?}", deployed_acc.info);
     eprintln!("Has code: {}", deployed_acc.info.code_hash != B256::ZERO);
 
@@ -85,20 +81,19 @@ fn test_geth_calltracer_logs() {
     let mut evm = evm.with_inspector(&mut insp);
 
     // Verify the contract is still accessible after adding inspector
-    let check_acc = evm.ctx().db_mut().get_chain_mut(1).unwrap().load_account(addr).unwrap();
+    let check_acc = evm.ctx().db_mut().load_account(addr).unwrap();
     eprintln!("After adding inspector - Has code: {}", check_acc.info.code_hash != B256::ZERO);
 
     let res = evm
         .inspect_tx(TxEnv {
-            caller: ChainAddress(1, deployer),
+            caller: deployer,
             gas_limit: 10000000,
-            kind: MultiChainTxKind::Call(ChainAddress(1, addr)),
+            kind: TxKind::Call(addr),
             data: Bytes::default(), // call fallback
             nonce: 1,
             value: U256::ZERO,
             gas_price: 0,
             chain_id: Some(1),
-            chain_ids: Some(vec![1]),
             tx_type: 0,
             access_list: Default::default(),
             gas_priority_fee: None,
@@ -213,21 +208,17 @@ fn test_geth_mux_tracer() {
     }
     */
 
-    let mut multi_db = SimpleMultiChainDB::new();
-    multi_db.add_chain(1, CacheDB::new(EmptyDB::default()));
-    multi_db.add_chain(0, CacheDB::new(EmptyDB::default()));
+    let db = CacheDB::new(EmptyDB::default());
     let mut evm = Context::mainnet()
-        .with_db(multi_db)
+        .with_db(db)
         .modify_cfg_chained(|cfg| cfg.chain_id = 1)
-        .modify_block_chained(|blocks| {
-            blocks.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
-        })
+        .modify_block_chained(|block| block.prevrandao = Some(B256::ZERO))
         .build_mainnet();
 
     let code = hex!("608060405234801561001057600080fd5b506103ac806100206000396000f3fe60806040526004361061003f5760003560e01c80630332ed131461014d5780636ae1ad40146101625780638384a00214610177578063de7eb4f31461018c575b60405134815233906000805160206103578339815191529060200160405180910390a2306001600160a01b0316636ae1ad406040518163ffffffff1660e01b8152600401600060405180830381600087803b15801561009d57600080fd5b505af19250505080156100ae575060015b50306001600160a01b0316630332ed136040518163ffffffff1660e01b8152600401600060405180830381600087803b1580156100ea57600080fd5b505af19250505080156100fb575060015b50306001600160a01b0316638384a0026040518163ffffffff1660e01b8152600401600060405180830381600087803b15801561013757600080fd5b505af115801561014b573d6000803e3d6000fd5b005b34801561015957600080fd5b5061014b6101a1565b34801561016e57600080fd5b5061014b610253565b34801561018357600080fd5b5061014b6102b7565b34801561019857600080fd5b5061014b6102dd565b306001600160a01b031663de7eb4f36040518163ffffffff1660e01b8152600401600060405180830381600087803b1580156101dc57600080fd5b505af11580156101f0573d6000803e3d6000fd5b505060405162461bcd60e51b8152602060048201526024808201527f6e6573746564456d6974576974684661696c75726541667465724e6573746564604482015263115b5a5d60e21b6064820152608401915061024a9050565b60405180910390fd5b6040516000815233906000805160206103578339815191529060200160405180910390a260405162461bcd60e51b81526020600482015260156024820152746e6573746564456d6974576974684661696c75726560581b604482015260640161024a565b6040516000815233906000805160206103578339815191529060200160405180910390a2565b6040516000815233906000805160206103578339815191529060200160405180910390a2306001600160a01b0316638384a0026040518163ffffffff1660e01b8152600401600060405180830381600087803b15801561033c57600080fd5b505af1158015610350573d6000803e3d6000fd5b5050505056fef950957d2407bed19dc99b718b46b4ce6090c05589006dfb86fd22c34865b23ea2646970667358221220090a696b9fbd22c7d1cc2a0b6d4a48c32d3ba892480713689a3145b73cfeb02164736f6c63430008130033");
     let deployer = Address::ZERO;
     // Fund the deployer account BEFORE deployment
-    let acc = evm.ctx().db_mut().get_chain_mut(1).unwrap().load_account(deployer).unwrap();
+    let acc = evm.ctx().db_mut().load_account(deployer).unwrap();
     acc.info.balance = U256::from(u64::MAX);
 
     let addr =
@@ -260,15 +251,14 @@ fn test_geth_mux_tracer() {
 
     let res = evm
         .inspect_tx(TxEnv {
-            caller: ChainAddress(1, deployer),
+            caller: deployer,
             gas_limit: 10000000,
-            kind: MultiChainTxKind::Call(ChainAddress(1, addr)),
+            kind: TxKind::Call(addr),
             data: Bytes::default(), // call fallback
             nonce: 1,
             value: U256::ZERO,
             gas_price: 0,
             chain_id: Some(1),
-            chain_ids: Some(vec![1]),
             tx_type: 0,
             access_list: Default::default(),
             gas_priority_fee: None,
@@ -341,30 +331,25 @@ fn test_geth_mux_tracer() {
 fn test_geth_inspector_reset() {
     let insp = TracingInspector::new(TracingInspectorConfig::default_geth());
 
-    let mut multi_db = SimpleMultiChainDB::new();
-    multi_db.add_chain(1, CacheDB::new(EmptyDB::default()));
-    multi_db.add_chain(0, CacheDB::new(EmptyDB::default()));
+    let db = CacheDB::new(EmptyDB::default());
     let context = Context::mainnet()
-        .with_db(multi_db)
+        .with_db(db)
         .modify_cfg_chained(|cfg| cfg.chain_id = 1)
         .modify_cfg_chained(|cfg| cfg.spec = SpecId::LONDON)
-        .modify_block_chained(|blocks| {
-            blocks.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
-        });
+        .modify_block_chained(|block| block.prevrandao = Some(B256::ZERO));
 
     assert_eq!(insp.traces().nodes().first().unwrap().trace.gas_limit, 0);
 
     let mut evm = context.build_mainnet_with_inspector(insp);
     let tx = TxEnv {
-        caller: ChainAddress(1, Address::ZERO),
+        caller: Address::ZERO,
         gas_limit: 10000000,
         gas_price: 0,
-        kind: MultiChainTxKind::Call(ChainAddress(1, Address::ZERO)),
+        kind: TxKind::Call(Address::ZERO),
         value: U256::ZERO,
         data: Bytes::default(),
         nonce: 0,
         chain_id: Some(1),
-        chain_ids: Some(vec![1]),
         tx_type: 0,
         access_list: Default::default(),
         gas_priority_fee: None,
@@ -415,22 +400,18 @@ fn test_geth_calltracer_top_call_reverting() {
     Test that verifies the behavior of only_top_call with a reverting transaction.
     Uses the LogTracing contract which has functions that make nested calls and revert.
     */
-    let mut multi_db = SimpleMultiChainDB::new();
-    multi_db.add_chain(1, CacheDB::new(EmptyDB::default()));
-    multi_db.add_chain(0, CacheDB::new(EmptyDB::default()));
+    let db = CacheDB::new(EmptyDB::default());
     let mut evm = Context::mainnet()
-        .with_db(multi_db)
+        .with_db(db)
         .modify_cfg_chained(|cfg| cfg.chain_id = 1)
-        .modify_block_chained(|blocks| {
-            blocks.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
-        })
+        .modify_block_chained(|block| block.prevrandao = Some(B256::ZERO))
         .build_mainnet();
 
     // Use the LogTracing contract from test_geth_calltracer_logs
     let code = hex!("6080604052348015600f57600080fd5b506104078061001f6000396000f3fe60806040526004361061004a5760003560e01c80630332ed13146101585780636ae1ad401461016d5780638384a00214610182578063c8cc849414610197578063de7eb4f3146101ac575b60405134815233906000805160206103b28339815191529060200160405180910390a2306001600160a01b0316636ae1ad406040518163ffffffff1660e01b8152600401600060405180830381600087803b1580156100a857600080fd5b505af19250505080156100b9575060015b50306001600160a01b0316630332ed136040518163ffffffff1660e01b8152600401600060405180830381600087803b1580156100f557600080fd5b505af1925050508015610106575060015b50306001600160a01b0316638384a0026040518163ffffffff1660e01b8152600401600060405180830381600087803b15801561014257600080fd5b505af1158015610156573d6000803e3d6000fd5b005b34801561016457600080fd5b506101566101c1565b34801561017957600080fd5b50610156610273565b34801561018e57600080fd5b506101566102d7565b3480156101a357600080fd5b506101566102fd565b3480156101b857600080fd5b50610156610352565b306001600160a01b031663de7eb4f36040518163ffffffff1660e01b8152600401600060405180830381600087803b1580156101fc57600080fd5b505af1158015610210573d6000803e3d6000fd5b505060405162461bcd60e51b8152602060048201526024808201527f6e6573746564456d6974576974684661696c75726541667465724e6573746564604482015263115b5a5d60e21b6064820152608401915061026a9050565b60405180910390fd5b6040516000815233906000805160206103b28339815191529060200160405180910390a260405162461bcd60e51b81526020600482015260156024820152746e6573746564456d6974576974684661696c75726560581b604482015260640161026a565b6040516000815233906000805160206103b28339815191529060200160405180910390a2565b306001600160a01b0316636ae1ad406040518163ffffffff1660e01b8152600401600060405180830381600087803b15801561033857600080fd5b505af115801561034c573d6000803e3d6000fd5b50505050565b6040516000815233906000805160206103b28339815191529060200160405180910390a2306001600160a01b0316638384a0026040518163ffffffff1660e01b8152600401600060405180830381600087803b15801561033857600080fdfef950957d2407bed19dc99b718b46b4ce6090c05589006dfb86fd22c34865b23ea26469706673582212209b23f4373dc3dbf660c7a677870817ed271ec576861581bbfb3ddd597db4a0f064736f6c634300081e0033");
     let deployer = Address::ZERO;
     // Fund the deployer account BEFORE deployment
-    let acc = evm.ctx().db_mut().get_chain_mut(1).unwrap().load_account(deployer).unwrap();
+    let acc = evm.ctx().db_mut().load_account(deployer).unwrap();
     acc.info.balance = U256::from(u64::MAX);
 
     let addr =
@@ -445,15 +426,14 @@ fn test_geth_calltracer_top_call_reverting() {
     // Call nestedEmitWithFailureAfterNestedEmit which has nested calls before reverting
     let res = evm
         .inspect_tx(TxEnv {
-            caller: ChainAddress(1, deployer),
+            caller: deployer,
             gas_limit: 10000000,
-            kind: MultiChainTxKind::Call(ChainAddress(1, addr)),
+            kind: TxKind::Call(addr),
             data: hex!("0332ed13").into(), // nestedEmitWithFailureAfterNestedEmit() selector
             nonce: 1,
             value: U256::ZERO,
             gas_price: 0,
             chain_id: Some(1),
-            chain_ids: Some(vec![1]),
             tx_type: 0,
             access_list: Default::default(),
             gas_priority_fee: None,
@@ -483,19 +463,15 @@ fn test_geth_calltracer_top_call_reverting() {
 
     // Now test with only_top_call = false to verify we see the nested structure
     let mut insp2 = TracingInspector::new(TracingInspectorConfig::default_geth());
-    let mut multi_db2 = SimpleMultiChainDB::new();
-    multi_db2.add_chain(1, CacheDB::new(EmptyDB::default()));
-    multi_db2.add_chain(0, CacheDB::new(EmptyDB::default()));
+    let db2 = CacheDB::new(EmptyDB::default());
     let mut evm2 = Context::mainnet()
-        .with_db(multi_db2)
+        .with_db(db2)
         .modify_cfg_chained(|cfg| cfg.chain_id = 1)
-        .modify_block_chained(|blocks| {
-            blocks.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
-        })
+        .modify_block_chained(|block| block.prevrandao = Some(B256::ZERO))
         .build_mainnet();
 
     // Fund the deployer account BEFORE deployment
-    let acc2 = evm2.ctx().db_mut().get_chain_mut(1).unwrap().load_account(deployer).unwrap();
+    let acc2 = evm2.ctx().db_mut().load_account(deployer).unwrap();
     acc2.info.balance = U256::from(u64::MAX);
 
     let addr2 = deploy_contract(&mut evm2, code.into(), deployer, SpecId::LONDON)
@@ -506,15 +482,14 @@ fn test_geth_calltracer_top_call_reverting() {
 
     let res2 = evm2
         .inspect_tx(TxEnv {
-            caller: ChainAddress(1, deployer),
+            caller: deployer,
             gas_limit: 10000000,
-            kind: MultiChainTxKind::Call(ChainAddress(1, addr2)),
+            kind: TxKind::Call(addr2),
             data: hex!("0332ed13").into(), // nestedEmitWithFailureAfterNestedEmit() selector
             nonce: 1,
             value: U256::ZERO,
             gas_price: 0,
             chain_id: Some(1),
-            chain_ids: Some(vec![1]),
             tx_type: 0,
             access_list: Default::default(),
             gas_priority_fee: None,
@@ -555,22 +530,18 @@ fn test_geth_calltracer_nested_revert() {
     Test that verifies the behavior of only_top_call with the nestedRevert function.
     This function calls nestedEmitWithFailure which emits a log and then reverts.
     */
-    let mut multi_db = SimpleMultiChainDB::new();
-    multi_db.add_chain(1, CacheDB::new(EmptyDB::default()));
-    multi_db.add_chain(0, CacheDB::new(EmptyDB::default()));
+    let db = CacheDB::new(EmptyDB::default());
     let mut evm = Context::mainnet()
-        .with_db(multi_db)
+        .with_db(db)
         .modify_cfg_chained(|cfg| cfg.chain_id = 1)
-        .modify_block_chained(|blocks| {
-            blocks.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
-        })
+        .modify_block_chained(|block| block.prevrandao = Some(B256::ZERO))
         .build_mainnet();
 
     // Use the LogTracing contract with nestedRevert function
     let code = hex!("6080604052348015600f57600080fd5b506104078061001f6000396000f3fe60806040526004361061004a5760003560e01c80630332ed13146101585780636ae1ad401461016d5780638384a00214610182578063c8cc849414610197578063de7eb4f3146101ac575b60405134815233906000805160206103b28339815191529060200160405180910390a2306001600160a01b0316636ae1ad406040518163ffffffff1660e01b8152600401600060405180830381600087803b1580156100a857600080fd5b505af19250505080156100b9575060015b50306001600160a01b0316630332ed136040518163ffffffff1660e01b8152600401600060405180830381600087803b1580156100f557600080fd5b505af1925050508015610106575060015b50306001600160a01b0316638384a0026040518163ffffffff1660e01b8152600401600060405180830381600087803b15801561014257600080fd5b505af1158015610156573d6000803e3d6000fd5b005b34801561016457600080fd5b506101566101c1565b34801561017957600080fd5b50610156610273565b34801561018e57600080fd5b506101566102d7565b3480156101a357600080fd5b506101566102fd565b3480156101b857600080fd5b50610156610352565b306001600160a01b031663de7eb4f36040518163ffffffff1660e01b8152600401600060405180830381600087803b1580156101fc57600080fd5b505af1158015610210573d6000803e3d6000fd5b505060405162461bcd60e51b8152602060048201526024808201527f6e6573746564456d6974576974684661696c75726541667465724e6573746564604482015263115b5a5d60e21b6064820152608401915061026a9050565b60405180910390fd5b6040516000815233906000805160206103b28339815191529060200160405180910390a260405162461bcd60e51b81526020600482015260156024820152746e6573746564456d6974576974684661696c75726560581b604482015260640161026a565b6040516000815233906000805160206103b28339815191529060200160405180910390a2565b306001600160a01b0316636ae1ad406040518163ffffffff1660e01b8152600401600060405180830381600087803b15801561033857600080fd5b505af115801561034c573d6000803e3d6000fd5b50505050565b6040516000815233906000805160206103b28339815191529060200160405180910390a2306001600160a01b0316638384a0026040518163ffffffff1660e01b8152600401600060405180830381600087803b15801561033857600080fdfef950957d2407bed19dc99b718b46b4ce6090c05589006dfb86fd22c34865b23ea26469706673582212209b23f4373dc3dbf660c7a677870817ed271ec576861581bbfb3ddd597db4a0f064736f6c634300081e0033");
     let deployer = Address::ZERO;
     // Fund the deployer account BEFORE deployment
-    let acc = evm.ctx().db_mut().get_chain_mut(1).unwrap().load_account(deployer).unwrap();
+    let acc = evm.ctx().db_mut().load_account(deployer).unwrap();
     acc.info.balance = U256::from(u64::MAX);
 
     let addr =
@@ -583,15 +554,14 @@ fn test_geth_calltracer_nested_revert() {
     // Call nestedRevert which calls nestedEmitWithFailure
     let res = evm
         .inspect_tx(TxEnv {
-            caller: ChainAddress(1, deployer),
+            caller: deployer,
             gas_limit: 10000000,
-            kind: MultiChainTxKind::Call(ChainAddress(1, addr)),
+            kind: TxKind::Call(addr),
             data: hex!("c8cc8494").into(), // nestedRevert() selector
             nonce: 1,
             value: U256::ZERO,
             gas_price: 0,
             chain_id: Some(1),
-            chain_ids: Some(vec![1]),
             tx_type: 0,
             access_list: Default::default(),
             gas_priority_fee: None,
@@ -616,19 +586,15 @@ fn test_geth_calltracer_nested_revert() {
 
     // Now test with only_top_call = false
     let mut insp2 = TracingInspector::new(TracingInspectorConfig::default_geth());
-    let mut multi_db2 = SimpleMultiChainDB::new();
-    multi_db2.add_chain(1, CacheDB::new(EmptyDB::default()));
-    multi_db2.add_chain(0, CacheDB::new(EmptyDB::default()));
+    let db2 = CacheDB::new(EmptyDB::default());
     let mut evm2 = Context::mainnet()
-        .with_db(multi_db2)
+        .with_db(db2)
         .modify_cfg_chained(|cfg| cfg.chain_id = 1)
-        .modify_block_chained(|blocks| {
-            blocks.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
-        })
+        .modify_block_chained(|block| block.prevrandao = Some(B256::ZERO))
         .build_mainnet();
 
     // Fund the deployer account BEFORE deployment
-    let acc2 = evm2.ctx().db_mut().get_chain_mut(1).unwrap().load_account(deployer).unwrap();
+    let acc2 = evm2.ctx().db_mut().load_account(deployer).unwrap();
     acc2.info.balance = U256::from(u64::MAX);
 
     let addr2 = deploy_contract(&mut evm2, code.into(), deployer, SpecId::LONDON)
@@ -639,15 +605,14 @@ fn test_geth_calltracer_nested_revert() {
 
     let res2 = evm2
         .inspect_tx(TxEnv {
-            caller: ChainAddress(1, deployer),
+            caller: deployer,
             gas_limit: 10000000,
-            kind: MultiChainTxKind::Call(ChainAddress(1, addr2)),
+            kind: TxKind::Call(addr2),
             data: hex!("c8cc8494").into(), // nestedRevert() selector
             nonce: 1,
             value: U256::ZERO,
             gas_price: 0,
             chain_id: Some(1),
-            chain_ids: Some(vec![1]),
             tx_type: 0,
             access_list: Default::default(),
             gas_priority_fee: None,
@@ -686,15 +651,11 @@ fn test_geth_calltracer_nested_revert() {
     // Test revert with topcall
     let mut insp3 =
         TracingInspector::new(TracingInspectorConfig::default_geth().set_record_logs(true));
-    let mut multi_db3 = SimpleMultiChainDB::new();
-    multi_db3.add_chain(1, CacheDB::new(EmptyDB::default()));
-    multi_db3.add_chain(0, CacheDB::new(EmptyDB::default()));
+    let db3 = CacheDB::new(EmptyDB::default());
     let mut evm3 = Context::mainnet()
-        .with_db(multi_db3)
+        .with_db(db3)
         .modify_cfg_chained(|cfg| cfg.chain_id = 1)
-        .modify_block_chained(|blocks| {
-            blocks.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
-        })
+        .modify_block_chained(|block| block.prevrandao = Some(B256::ZERO))
         .build_mainnet();
 
     let addr3 = deploy_contract(&mut evm3, code.into(), deployer, SpecId::LONDON)
@@ -704,15 +665,14 @@ fn test_geth_calltracer_nested_revert() {
 
     let res3 = evm3
         .inspect_tx(TxEnv {
-            caller: ChainAddress(1, deployer),
+            caller: deployer,
             gas_limit: 10000000,
-            kind: MultiChainTxKind::Call(ChainAddress(1, addr3)),
+            kind: TxKind::Call(addr3),
             data: hex!("c8cc8494").into(), // nestedRevert() selector
             nonce: 1,
             value: U256::ZERO,
             gas_price: 0,
             chain_id: Some(1),
-            chain_ids: Some(vec![1]),
             tx_type: 0,
             access_list: Default::default(),
             gas_priority_fee: None,

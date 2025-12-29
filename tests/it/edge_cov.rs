@@ -2,17 +2,17 @@
 
 use alloy_primitives::{hex, Address, B256, U256};
 use revm::{
-    context::{BlockEnv, TxEnv},
+    context::TxEnv,
     context_interface::{
         result::{ExecutionResult, Output},
         ContextTr,
     },
-    database::{CacheDB, SimpleMultiChainDB},
-    database_interface::{EmptyDB, MultiChainDatabaseCommit},
+    database::CacheDB,
+    database_interface::{DatabaseCommit, EmptyDB},
     handler::EvmTr,
     inspector::InspectorEvmTr,
-    primitives::{hardfork::SpecId, ChainAddress, MultiChainTxKind},
-    Context, ExecuteEvm, InspectEvm, MainBuilder, MainContext,
+    primitives::{hardfork::SpecId, TxKind},
+    Context, InspectEvm, MainBuilder, MainContext,
 };
 use revm_inspectors::{
     edge_cov::EdgeCovInspector,
@@ -36,19 +36,15 @@ fn test_edge_coverage() {
     let code = hex!("6080604052348015600f57600080fd5b5060b580601d6000396000f3fe6080604052348015600f57600080fd5b506004361060285760003560e01c8063f42e8cdd14602d575b600080fd5b603c60383660046058565b603e565b005b60005b60ff811015605457816054576001016041565b5050565b600060208284031215606957600080fd5b81358015158114607857600080fd5b939250505056fea2646970667358221220a206d90c473b6930258d5789495c41b79941b5334c47a76b6e618d3571716d5164736f6c634300081c0033");
     let deployer = Address::ZERO;
 
-    let mut multi_db = SimpleMultiChainDB::new();
-    multi_db.add_chain(1, CacheDB::new(EmptyDB::default()));
-    multi_db.add_chain(0, CacheDB::new(EmptyDB::default()));
+    let db = CacheDB::new(EmptyDB::default());
 
     let ctx = Context::mainnet()
         .modify_cfg_chained(|cfg| {
             cfg.chain_id = 1;
             cfg.spec = SpecId::LONDON;
         })
-        .with_db(multi_db)
-        .modify_block_chained(|blocks| {
-            blocks.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
-        });
+        .with_db(db)
+        .modify_block_chained(|block| block.prevrandao = Some(B256::ZERO));
 
     let mut insp = TracingInspector::new(TracingInspectorConfig::default_geth());
 
@@ -57,15 +53,14 @@ fn test_edge_coverage() {
     // Create contract
     let res = evm
         .inspect_tx(TxEnv {
-            caller: ChainAddress(1, deployer),
+            caller: deployer,
             gas_limit: 1000000,
-            kind: MultiChainTxKind::Create,
+            kind: TxKind::Create,
             data: code.into(),
             nonce: 0,
             value: U256::ZERO,
             gas_price: 0,
             chain_id: Some(1),
-            chain_ids: Some(vec![1]),
             tx_type: 0,
             access_list: Default::default(),
             gas_priority_fee: None,
@@ -81,15 +76,15 @@ fn test_edge_coverage() {
         },
         _ => panic!("Execution failed"),
     };
-    evm.ctx().db_mut().commit_multi(res.state);
+    evm.ctx().db_mut().commit(res.state);
 
-    let acc = evm.ctx().db_mut().get_chain_mut(1).unwrap().load_account(deployer).unwrap();
+    let acc = evm.ctx().db_mut().load_account(deployer).unwrap();
     acc.info.balance = U256::from(u64::MAX);
 
     let tx = TxEnv {
-        caller: ChainAddress(1, deployer),
+        caller: deployer,
         gas_limit: 100000000,
-        kind: MultiChainTxKind::Call(ChainAddress(1, addr)),
+        kind: TxKind::Call(addr),
         nonce: 1,
         // 'cast cd "Y(bool)" true'
         data: hex!("f42e8cdd0000000000000000000000000000000000000000000000000000000000000001")
@@ -97,7 +92,6 @@ fn test_edge_coverage() {
         value: U256::ZERO,
         gas_price: 0,
         chain_id: Some(1),
-        chain_ids: Some(vec![1]),
         tx_type: 0,
         access_list: Default::default(),
         gas_priority_fee: None,
@@ -120,9 +114,9 @@ fn test_edge_coverage() {
     evm.inspector().reset();
     let res = evm
         .inspect_tx(TxEnv {
-            caller: ChainAddress(1, deployer),
+            caller: deployer,
             gas_limit: 100000000,
-            kind: MultiChainTxKind::Call(ChainAddress(1, addr)),
+            kind: TxKind::Call(addr),
             nonce: 1,
             // 'cast cd "Y(bool)" false'
             data: hex!("f42e8cdd0000000000000000000000000000000000000000000000000000000000000000")
@@ -130,7 +124,6 @@ fn test_edge_coverage() {
             value: U256::ZERO,
             gas_price: 0,
             chain_id: Some(1),
-            chain_ids: Some(vec![1]),
             tx_type: 0,
             access_list: Default::default(),
             gas_priority_fee: None,

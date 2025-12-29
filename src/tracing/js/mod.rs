@@ -27,7 +27,7 @@ use revm::{
         result::{ExecutionResult, HaltReasonTr, Output, ResultAndState},
         Block, ContextTr, TransactTo, Transaction,
     },
-    database_interface::MultiChainDatabaseRef,
+    database_interface::DatabaseRef,
     inspector::JournalExt,
     interpreter::{
         interpreter_types::{Jumps, LoopControl},
@@ -244,8 +244,8 @@ impl JsInspector {
         db: &DB,
     ) -> Result<serde_json::Value, JsInspectorError>
     where
-        DB: MultiChainDatabaseRef,
-        <DB as MultiChainDatabaseRef>::Error: core::fmt::Display,
+        DB: DatabaseRef,
+        <DB as DatabaseRef>::Error: core::fmt::Display,
     {
         let result = self.result(res, tx, block, db)?;
         Ok(to_serde_value(result, &mut self.ctx)?)
@@ -261,8 +261,8 @@ impl JsInspector {
     ) -> Result<JsValue, JsInspectorError>
     where
         TX: Transaction,
-        DB: MultiChainDatabaseRef,
-        <DB as MultiChainDatabaseRef>::Error: core::fmt::Display,
+        DB: DatabaseRef,
+        <DB as DatabaseRef>::Error: core::fmt::Display,
     {
         let ResultAndState { result, state } = res;
         let (db, _db_guard) = EvmDbRef::new(&state, db);
@@ -311,7 +311,7 @@ impl JsInspector {
                 .unwrap_or(u64::MAX),
             value: tx.value(),
             block: block.number().try_into().unwrap_or(u64::MAX),
-            coinbase: block.beneficiary().1,
+            coinbase: block.beneficiary(),
             output: output_bytes.unwrap_or_default(),
             time: block.timestamp().to_string(),
             intrinsic_gas: 0,
@@ -415,7 +415,7 @@ impl JsInspector {
             return;
         }
         let precompiles = PrecompileList(
-            context.journal().precompile_addresses().iter().map(|ca| ca.1).collect(),
+            context.journal().precompile_addresses().iter().copied().collect(),
         );
 
         let _ = precompiles.register_callable(&mut self.ctx);
@@ -427,7 +427,7 @@ impl JsInspector {
 impl<CTX> Inspector<CTX> for JsInspector
 where
     CTX: ContextTr<Journal: JournalExt>,
-    <CTX as ContextTr>::Db: MultiChainDatabaseRef,
+    <CTX as ContextTr>::Db: DatabaseRef,
 {
     fn step(&mut self, interp: &mut Interpreter, context: &mut CTX) {
         // if this is a revert we need to manually record this so that we can use it in the
@@ -457,8 +457,8 @@ where
             refund: interp.gas.refunded() as u64,
             error: None,
             contract: Contract {
-                caller: interp.input.caller_address.1,
-                contract: interp.input.target_address.1,
+                caller: interp.input.caller_address,
+                contract: interp.input.target_address,
                 value: active_call.contract.value,
                 input: active_call.contract.input.clone(),
             },
@@ -511,8 +511,8 @@ where
                     .as_ref()
                     .and_then(|i| i.instruction_result().map(|i| format!("{i:?}"))),
                 contract: Contract {
-                    caller: interp.input.caller_address.1,
-                    contract: interp.input.target_address.1,
+                    caller: interp.input.caller_address,
+                    contract: interp.input.target_address,
                     value: active_call.contract.value,
                     input: active_call.contract.input.clone(),
                 },
@@ -537,11 +537,11 @@ where
 
         let value = inputs.transfer_value().unwrap_or_default();
         self.push_call(
-            contract.1,
+            contract,
             inputs.input_data(context),
             value,
             inputs.scheme.into(),
-            caller.1,
+            caller,
             inputs.gas_limit,
         );
 
@@ -588,7 +588,7 @@ where
             inputs.init_code.clone(),
             inputs.value,
             inputs.scheme.into(),
-            inputs.caller.1,
+            inputs.caller,
             inputs.gas_limit,
         );
 
@@ -700,12 +700,11 @@ mod tests {
     use alloy_primitives::{hex, Address, B256};
     use revm::{
         context::TxEnv,
-        database::SimpleMultiChainDB,
         database_interface::EmptyDB,
         inspector::InspectorEvmTr,
-        primitives::{hardfork::SpecId, ChainAddress, MultiChainTxKind},
+        primitives::{hardfork::SpecId, TxKind},
         state::{AccountInfo, Bytecode},
-        InspectEvm, MainBuilder,
+        InspectEvm, MainBuilder, MainContext,
     };
     //use revm_inspector::{inspector_handler, InspectorContext, InspectorMainEvm};
     use serde_json::json;
@@ -741,7 +740,6 @@ mod tests {
     fn run_trace(code: &str, contract: Option<Bytes>, success: bool) -> serde_json::Value {
         let addr = Address::repeat_byte(0x01);
 
-        // Create SimpleMultiChainDB with test data
         let mut chain_db = revm::database::CacheDB::new(EmptyDB::default());
         // Insert the caller
         chain_db.insert_account_info(
@@ -760,35 +758,28 @@ mod tests {
             },
         );
 
-        let mut multi_db = SimpleMultiChainDB::new();
-        multi_db.add_chain(1, chain_db);
-
         let insp = JsInspector::new(code.to_string(), serde_json::Value::Null).unwrap();
         let mut evm = revm::Context::mainnet()
             .modify_cfg_chained(|cfg| cfg.spec = SpecId::CANCUN)
-            .with_db(multi_db)
-            .modify_block_chained(|blocks| {
-                use revm::context::BlockEnv;
-                blocks.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
-            })
+            .with_db(chain_db)
+            .modify_block_chained(|block| block.prevrandao = Some(B256::ZERO))
             .build_mainnet_with_inspector(insp);
 
         let res = evm
             .inspect_tx(TxEnv {
-                caller: ChainAddress(1, Address::ZERO),
+                caller: Address::ZERO,
                 gas_price: 1024,
                 gas_limit: 1_000_000,
                 gas_priority_fee: None,
-                kind: MultiChainTxKind::Call(ChainAddress(1, addr)),
+                kind: TxKind::Call(addr),
                 chain_id: Some(1),
-                chain_ids: Some(vec![1]),
                 ..Default::default()
             })
             .expect("pass without error");
 
         assert_eq!(res.result.is_success(), success);
         let (ctx, inspector) = evm.ctx_inspector();
-        inspector.json_result(res, ctx.tx(), ctx.block().get(&1).unwrap(), ctx.db_ref()).unwrap()
+        inspector.json_result(res, ctx.tx(), ctx.block(), ctx.db_ref()).unwrap()
     }
 
     #[test]

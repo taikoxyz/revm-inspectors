@@ -15,7 +15,6 @@ use revm::{
         interpreter_types::{InputsTr, Jumps},
         Interpreter,
     },
-    primitives::ChainAddress,
     Inspector,
 };
 
@@ -99,8 +98,7 @@ impl AccessListInspector {
             // We need to exclude the created address if this is a CREATE frame.
             //
             // This assumes that caller has already been loaded but nonce was not increased yet.
-            let nonce =
-                context.journal_ref().evm_state().get(&ChainAddress(1, from)).unwrap().info.nonce;
+            let nonce = context.journal_ref().evm_state().get(&from).unwrap().info.nonce;
             from.create(nonce)
         };
         let precompiles = context.journal_ref().precompile_addresses().clone();
@@ -108,10 +106,7 @@ impl AccessListInspector {
         // 7702 authorities should be excluded because those get loaded anyway
         let auth_addrs = context.tx().authorization_list().flat_map(|a| a.authority());
 
-        // Convert precompiles from HashSet<ChainAddress> to iterator of Address
-        let precompile_addrs = precompiles.into_iter().map(|ca| ca.1);
-
-        self.excluded = [from, to].into_iter().chain(precompile_addrs).chain(auth_addrs).collect();
+        self.excluded = [from, to].into_iter().chain(precompiles).chain(auth_addrs).collect();
     }
 }
 
@@ -123,7 +118,7 @@ where
         match interp.bytecode.opcode() {
             opcode::SLOAD | opcode::SSTORE => {
                 if let Ok(slot) = interp.stack.peek(0) {
-                    let cur_contract = interp.input.target_address().1;
+                    let cur_contract = interp.input.target_address();
                     self.touched_slots
                         .entry(cur_contract)
                         .or_default()

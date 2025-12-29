@@ -25,7 +25,7 @@ use alloy_rpc_types_trace::geth::{
 };
 use revm::{
     context_interface::result::{HaltReasonTr, ResultAndState},
-    database_interface::MultiChainDatabaseRef,
+    database_interface::DatabaseRef,
     state::EvmState,
 };
 
@@ -232,7 +232,7 @@ impl<'a> GethTraceBuilder<'a> {
     /// * `state` - The state post-transaction execution.
     /// * `diff_mode` - if prestate is in diff or prestate mode.
     /// * `db` - The database to fetch state pre-transaction execution.
-    pub fn geth_prestate_traces<DB: MultiChainDatabaseRef>(
+    pub fn geth_prestate_traces<DB: DatabaseRef>(
         &self,
         ResultAndState { state, .. }: &ResultAndState<impl HaltReasonTr>,
         prestate_config: &PreStateConfig,
@@ -247,7 +247,7 @@ impl<'a> GethTraceBuilder<'a> {
         }
     }
 
-    fn geth_prestate_pre_traces<DB: MultiChainDatabaseRef>(
+    fn geth_prestate_pre_traces<DB: DatabaseRef>(
         &self,
         state: &EvmState,
         db: DB,
@@ -259,8 +259,7 @@ impl<'a> GethTraceBuilder<'a> {
 
         // we only want changed accounts for things like balance changes etc
         for (addr, changed_acc) in account_diffs {
-            // addr is already a ChainAddress
-            let db_acc = db.basic_ref_multi(addr)?.unwrap_or_default();
+            let db_acc = db.basic_ref(addr)?.unwrap_or_default();
             let code = code_enabled.then(|| load_account_code(&db, &db_acc)).flatten();
             let mut acc_state = AccountState::from_account_info(db_acc.nonce, db_acc.balance, code);
 
@@ -271,13 +270,13 @@ impl<'a> GethTraceBuilder<'a> {
                 }
             }
 
-            prestate.0.insert(addr.1, acc_state);
+            prestate.0.insert(addr, acc_state);
         }
 
         Ok(PreStateFrame::Default(prestate))
     }
 
-    fn geth_prestate_diff_traces<DB: MultiChainDatabaseRef>(
+    fn geth_prestate_diff_traces<DB: DatabaseRef>(
         &self,
         state: &EvmState,
         db: DB,
@@ -289,8 +288,7 @@ impl<'a> GethTraceBuilder<'a> {
         let mut account_change_kinds =
             HashMap::with_capacity_and_hasher(account_diffs.len(), Default::default());
         for (addr, changed_acc) in account_diffs {
-            // addr is already a ChainAddress
-            let db_acc = db.basic_ref_multi(addr)?.unwrap_or_default();
+            let db_acc = db.basic_ref(addr)?.unwrap_or_default();
 
             let pre_code = code_enabled.then(|| load_account_code(&db, &db_acc)).flatten();
 
@@ -312,8 +310,8 @@ impl<'a> GethTraceBuilder<'a> {
                 }
             }
 
-            state_diff.pre.insert(addr.1, pre_state);
-            state_diff.post.insert(addr.1, post_state);
+            state_diff.pre.insert(addr, pre_state);
+            state_diff.post.insert(addr, post_state);
 
             // determine the change type
             let pre_change = if changed_acc.is_created() {
@@ -327,7 +325,7 @@ impl<'a> GethTraceBuilder<'a> {
                 AccountChangeKind::Modify
             };
 
-            account_change_kinds.insert(addr.1, (pre_change, post_change));
+            account_change_kinds.insert(addr, (pre_change, post_change));
         }
 
         // ensure we're only keeping changed entries

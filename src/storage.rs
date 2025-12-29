@@ -59,7 +59,7 @@ where
     fn step(&mut self, interp: &mut Interpreter, _context: &mut CTX) {
         if interp.bytecode.opcode() == opcode::SLOAD {
             if let Ok(slot) = interp.stack.peek(0) {
-                let address = interp.input.target_address().1;
+                let address = interp.input.target_address();
                 let slot = B256::from(slot.to_be_bytes());
 
                 let slot_access_count =

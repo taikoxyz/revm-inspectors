@@ -3,12 +3,11 @@ use alloy_primitives::{address, b256, bytes, hex, Address, B256, U256};
 use alloy_sol_types::{sol, SolCall};
 use colorchoice::ColorChoice;
 use revm::{
-    context::{BlockEnv, TxEnv},
-    database::{CacheDB, SimpleMultiChainDB},
+    database::CacheDB,
     database_interface::EmptyDB,
     handler::EvmTr,
     inspector::InspectorEvmTr,
-    primitives::{hardfork::SpecId, ChainAddress, MultiChainTxKind},
+    primitives::{hardfork::SpecId, TxKind},
     Context, InspectCommitEvm, InspectEvm, MainBuilder, MainContext,
 };
 use revm_inspectors::tracing::{
@@ -28,16 +27,12 @@ fn test_trace_printing() {
 
     let base_path = &Path::new(OUT_DIR).join("test_trace_printing");
 
-    let mut multi_db = SimpleMultiChainDB::new();
-    multi_db.add_chain(1, CacheDB::new(EmptyDB::default()));
-    multi_db.add_chain(0, CacheDB::new(EmptyDB::default()));
+    let db = CacheDB::new(EmptyDB::default());
 
     let mut evm = Context::mainnet()
-        .with_db(multi_db)
+        .with_db(db)
         .modify_cfg_chained(|cfg| cfg.chain_id = 1)
-        .modify_block_chained(|blocks| {
-            blocks.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
-        })
+        .modify_block_chained(|block| block.prevrandao = Some(B256::ZERO))
         .build_mainnet_with_inspector(TracingInspector::new(TracingInspectorConfig::all()));
 
     //let address = evm.deploy(CREATION_CODE.parse().unwrap(), &mut tracer).unwrap();
@@ -57,7 +52,7 @@ fn test_trace_printing() {
 
     let mut call = |data: Vec<u8>| {
         evm.ctx().tx.data = data.into();
-        evm.ctx().tx.kind = MultiChainTxKind::Call(ChainAddress(1, address));
+        evm.ctx().tx.kind = TxKind::Call(address);
         evm.ctx().tx.gas_priority_fee = None;
         evm.ctx().tx.nonce = index as u64;
         evm.set_inspector(TracingInspector::new(TracingInspectorConfig::all()));
@@ -100,16 +95,12 @@ fn test_trace_printing() {
 fn deploy_fail() {
     let base_path = &Path::new(OUT_DIR).join("deploy_fail");
 
-    let mut multi_db = SimpleMultiChainDB::new();
-    multi_db.add_chain(1, CacheDB::new(EmptyDB::default()));
-    multi_db.add_chain(0, CacheDB::new(EmptyDB::default()));
+    let db = CacheDB::new(EmptyDB::default());
 
     let mut evm = Context::mainnet()
-        .with_db(multi_db)
+        .with_db(db)
         .modify_cfg_chained(|cfg| cfg.chain_id = 1)
-        .modify_block_chained(|blocks| {
-            blocks.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
-        })
+        .modify_block_chained(|block| block.prevrandao = Some(B256::ZERO))
         .build_mainnet_with_inspector(TracingInspector::new(TracingInspectorConfig::all()));
 
     inspect_deploy_contract(

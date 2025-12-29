@@ -12,7 +12,7 @@ use revm::{
         result::{HaltReasonTr, ResultAndState},
         ContextTr,
     },
-    database_interface::MultiChainDatabaseRef,
+    database_interface::DatabaseRef,
     inspector::JournalExt,
     interpreter::{CallInputs, CallOutcome, CreateInputs, CreateOutcome, Interpreter},
     Inspector,
@@ -104,7 +104,7 @@ impl MuxInspector {
     }
 
     /// Try converting this [MuxInspector] into a [MuxFrame].
-    pub fn try_into_mux_frame<DB: MultiChainDatabaseRef>(
+    pub fn try_into_mux_frame<DB: DatabaseRef>(
         &self,
         result: &ResultAndState<impl HaltReasonTr>,
         db: &DB,

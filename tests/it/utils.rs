@@ -2,15 +2,12 @@ use alloy_primitives::{Address, Bytes, B256, U256};
 use colorchoice::ColorChoice;
 use revm::{
     context::{BlockEnv, CfgEnv, Evm, TxEnv},
-    context_interface::{
-        result::{ExecutionResult, HaltReason},
-        ContextTr,
-    },
-    database_interface::{MultiChainDatabase, MultiChainDatabaseCommit},
+    context_interface::result::{ExecutionResult, HaltReason},
+    database_interface::{Database, DatabaseCommit},
     handler::{instructions::EthInstructions, EthFrame, EthPrecompiles, EvmTr},
     interpreter::interpreter::EthInterpreter,
-    primitives::{hardfork::SpecId, ChainAddress, MultiChainTxKind},
-    Context, ExecuteCommitEvm, InspectCommitEvm, InspectEvm, Inspector, Journal,
+    primitives::{hardfork::SpecId, TxKind},
+    Context, ExecuteCommitEvm, InspectCommitEvm, Inspector, Journal,
 };
 
 use revm_inspectors::tracing::{TraceWriter, TraceWriterConfig, TracingInspector};
@@ -42,7 +39,7 @@ pub type EvmDb<DB, INSP> = Evm<
 
 /// Deploys a contract with the given code and deployer address.
 /// This function assumes the deployer account already has proper balance and nonce tracking
-pub fn deploy_contract<DB: MultiChainDatabase + MultiChainDatabaseCommit>(
+pub fn deploy_contract<DB: Database + DatabaseCommit>(
     evm: &mut EvmDb<DB, ()>,
     code: Bytes,
     deployer: Address,
@@ -52,7 +49,7 @@ pub fn deploy_contract<DB: MultiChainDatabase + MultiChainDatabaseCommit>(
     // The caller should ensure proper nonce is set before calling
     // For first deployment, caller should use nonce 0
     // For subsequent deployments, nonce should be incremented
-    let current_nonce = if evm.ctx().tx.caller.1 == deployer {
+    let current_nonce = if evm.ctx().tx.caller == deployer {
         // Same deployer, increment nonce
         evm.ctx().tx.nonce
     } else {
@@ -60,17 +57,16 @@ pub fn deploy_contract<DB: MultiChainDatabase + MultiChainDatabaseCommit>(
         0
     };
 
-    evm.ctx().tx.caller = ChainAddress(1, deployer);
+    evm.ctx().tx.caller = deployer;
     evm.ctx().tx.gas_limit = 1000000;
-    evm.ctx().tx.kind = MultiChainTxKind::Create;
+    evm.ctx().tx.kind = TxKind::Create;
     evm.ctx().tx.data = code;
     evm.ctx().tx.nonce = current_nonce;
     evm.ctx().cfg.spec = spec;
 
     // Set prevrandao for post-Merge specs
     if spec >= SpecId::MERGE {
-        use revm::context::BlockEnv;
-        evm.ctx().block.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
+        evm.ctx().block.prevrandao = Some(B256::ZERO);
     }
 
     let tx = evm.ctx().tx.clone();
@@ -82,7 +78,7 @@ pub fn deploy_contract<DB: MultiChainDatabase + MultiChainDatabaseCommit>(
 
 /// Deploys a contract with the given code and deployer address.
 pub fn inspect_deploy_contract<
-    DB: MultiChainDatabase + MultiChainDatabaseCommit,
+    DB: Database + DatabaseCommit,
     INSP: Inspector<ContextDb<DB>>,
 >(
     evm: &mut EvmDb<DB, INSP>,
@@ -94,24 +90,22 @@ pub fn inspect_deploy_contract<
 
     // Set prevrandao for post-Merge specs
     if spec >= SpecId::MERGE {
-        use revm::context::BlockEnv;
-        evm.ctx().block.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
+        evm.ctx().block.prevrandao = Some(B256::ZERO);
     }
 
     // Same logic as deploy_contract - track nonce based on deployer
-    let current_nonce = if evm.ctx().tx.caller.1 == deployer { evm.ctx().tx.nonce } else { 0 };
+    let current_nonce = if evm.ctx().tx.caller == deployer { evm.ctx().tx.nonce } else { 0 };
 
     let output = evm
         .inspect_tx_commit(TxEnv {
-            caller: ChainAddress(1, deployer),
+            caller: deployer,
             gas_limit: 1000000,
-            kind: MultiChainTxKind::Create,
+            kind: TxKind::Create,
             data: code,
             nonce: current_nonce,
             value: U256::ZERO,
             gas_price: 0,
             chain_id: Some(1),
-            chain_ids: Some(vec![1]),
             tx_type: 0,
             access_list: Default::default(),
             gas_priority_fee: None,

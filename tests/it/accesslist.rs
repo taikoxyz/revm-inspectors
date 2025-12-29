@@ -3,11 +3,11 @@
 use alloy_primitives::{address, hex, B256, U256};
 use revm::{
     bytecode::Bytecode,
-    context::{BlockEnv, TxEnv},
-    database::{CacheDB, SimpleMultiChainDB},
+    context::TxEnv,
+    database::CacheDB,
     database_interface::EmptyDB,
     handler::EvmTr,
-    primitives::{ChainAddress, MultiChainTxKind},
+    primitives::TxKind,
     state::AccountInfo,
     Context, InspectEvm, MainBuilder, MainContext,
 };
@@ -28,32 +28,27 @@ fn test_access_list_precompile() {
     let account = address!("341348115259a8bf69f1f50101c227fced83bac6");
     let caller = address!("341348115259a8bf69f1f50101c227fced83bac5");
 
-    let mut multi_db = SimpleMultiChainDB::new();
-    multi_db.add_chain(1, CacheDB::new(EmptyDB::default()));
-    multi_db.add_chain(0, CacheDB::new(EmptyDB::default()));
-    multi_db.get_chain_mut(1).unwrap().insert_account_info(
+    let mut db = CacheDB::new(EmptyDB::default());
+    db.insert_account_info(
         account,
         AccountInfo { code: Some(Bytecode::new_raw(code.into())), ..Default::default() },
     );
 
     let context = Context::mainnet()
-        .with_db(multi_db)
+        .with_db(db)
         .modify_cfg_chained(|cfg| cfg.chain_id = 1)
-        .modify_block_chained(|blocks| {
-            blocks.entry(1).or_insert_with(BlockEnv::default).prevrandao = Some(B256::ZERO);
-        });
+        .modify_block_chained(|block| block.prevrandao = Some(B256::ZERO));
     let mut evm = context.build_mainnet();
 
     evm.ctx().tx = TxEnv {
-        caller: ChainAddress(1, caller),
+        caller,
         gas_limit: 1000000,
-        kind: MultiChainTxKind::Call(ChainAddress(1, account)),
+        kind: TxKind::Call(account),
         data: hex!("a5399705").into(),
         nonce: 0,
         value: U256::ZERO,
         gas_price: 0,
         chain_id: Some(1),
-        chain_ids: Some(vec![1]),
         tx_type: 0,
         access_list: Default::default(),
         gas_priority_fee: None,
