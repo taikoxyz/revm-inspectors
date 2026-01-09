@@ -323,7 +323,7 @@ impl TracingInspector {
     #[allow(clippy::too_many_arguments)]
     fn start_trace_on_call<CTX: ContextTr>(
         &mut self,
-        context: &mut CTX,
+        _context: &mut CTX,
         address: Address,
         input_data: Bytes,
         value: U256,
@@ -348,7 +348,7 @@ impl TracingInspector {
             0,
             push_kind,
             CallTrace {
-                depth: context.journal().depth(),
+                depth: self.trace_stack.len(),
                 address,
                 kind,
                 data: input_data,
