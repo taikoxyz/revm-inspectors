@@ -13,12 +13,12 @@ use alloc::{boxed::Box, vec::Vec};
 use core::{borrow::Borrow, mem};
 use revm::{
     bytecode::opcode::{self, OpCode},
-    context::{JournalTr, LocalContextTr},
+    context::JournalTr,
     context_interface::ContextTr,
     inspector::JournalExt,
     interpreter::{
         interpreter_types::{Immediates, Jumps, LoopControl, ReturnData, RuntimeFlag},
-        CallInput, CallInputs, CallOutcome, CallScheme, CreateInputs, CreateOutcome, Interpreter,
+        CallInputs, CallOutcome, CallScheme, CreateInputs, CreateOutcome, Interpreter,
         InterpreterResult,
     },
     primitives::{hardfork::SpecId, Address, Bytes, Log, B256, U256},
@@ -627,7 +627,7 @@ where
             .exclude_precompile_calls
             .then(|| self.is_precompile_call(context, &to, &value));
 
-        let input = inputs.input_data(context);
+        let input = inputs.input.bytes(context);
         self.start_trace_on_call(
             context,
             to,
@@ -722,24 +722,6 @@ impl From<alloy_rpc_types_eth::TransactionInfo> for TransactionContext {
             block_hash: tx_info.block_hash,
             tx_index: tx_info.index.map(|idx| idx as usize),
             tx_hash: tx_info.hash,
-        }
-    }
-}
-
-/// A helper extension trait that _clones_ the input data from the shared mem buffer
-pub(crate) trait CallInputExt {
-    fn input_data<CTX: ContextTr>(&self, ctx: &mut CTX) -> Bytes;
-}
-
-impl CallInputExt for CallInputs {
-    fn input_data<CTX: ContextTr>(&self, ctx: &mut CTX) -> Bytes {
-        match &self.input {
-            CallInput::SharedBuffer(range) => ctx
-                .local()
-                .shared_memory_buffer_slice(range.clone())
-                .map(|slice| Bytes::copy_from_slice(&slice))
-                .unwrap_or_default(),
-            CallInput::Bytes(bytes) => bytes.clone(),
         }
     }
 }
