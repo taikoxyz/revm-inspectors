@@ -18,7 +18,8 @@ use revm::{
     inspector::JournalExt,
     interpreter::{
         interpreter_types::{Immediates, Jumps, LoopControl, ReturnData, RuntimeFlag},
-        CallInputs, CallOutcome, CallScheme, CreateInputs, CreateOutcome, Interpreter,
+        CallInputReadError, CallInputs, CallOutcome, CallScheme, CreateInputs, CreateOutcome,
+        Interpreter,
         InterpreterResult,
     },
     primitives::{hardfork::SpecId, Address, Bytes, Log, B256, U256},
@@ -59,6 +60,12 @@ pub mod js;
 mod mux;
 pub use mux::{Error as MuxError, MuxInspector};
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TraceRecoverableError {
+    /// Call input could not be materialized from shared memory.
+    CallInputRead(CallInputReadError),
+}
+
 /// An inspector that collects call traces.
 ///
 /// This [Inspector] can be hooked into revm's EVM which then calls the inspector
@@ -89,6 +96,8 @@ pub struct TracingInspector {
     ///
     /// All `Vec<CallTraceStep>` are always empty but may have capacity.
     reusable_step_vecs: Vec<Vec<CallTraceStep>>,
+    /// Recoverable tracing issues captured while preserving runtime behavior.
+    recoverable_errors: Vec<TraceRecoverableError>,
 }
 
 impl TracingInspector {
@@ -113,6 +122,7 @@ impl TracingInspector {
             // kept
             config,
             reusable_step_vecs,
+            recoverable_errors,
         } = self;
 
         // if we record steps we can reuse the individual calltracestep vecs
@@ -132,6 +142,7 @@ impl TracingInspector {
         spec_id.take();
         *last_journal_len = 0;
         *record_step_end = false;
+        recoverable_errors.clear();
     }
 
     /// Resets the inspector to it's initial state of [Self::new].
@@ -150,6 +161,15 @@ impl TracingInspector {
     pub fn config_mut(&mut self) -> &mut TracingInspectorConfig {
         &mut self.config
     }
+    /// Returns recoverable tracing errors captured while preserving behavior.
+    pub fn recoverable_errors(&self) -> &[TraceRecoverableError] {
+        &self.recoverable_errors
+    }
+
+    fn record_recoverable_error(&mut self, error: TraceRecoverableError) {
+        self.recoverable_errors.push(error);
+    }
+
 
     /// Updates the config of the inspector.
     pub fn update_config(
@@ -627,7 +647,13 @@ where
             .exclude_precompile_calls
             .then(|| self.is_precompile_call(context, &to, &value));
 
-        let input = input_bytes(context, inputs);
+        let input = match try_input_bytes(context, inputs) {
+            Ok(input) => input,
+            Err(err) => {
+                self.record_recoverable_error(TraceRecoverableError::CallInputRead(err));
+                Bytes::new()
+            }
+        };
         self.start_trace_on_call(
             context,
             to,
@@ -679,8 +705,16 @@ where
 }
 
 #[inline]
+pub(crate) fn try_input_bytes<CTX: ContextTr>(
+    context: &mut CTX,
+    inputs: &CallInputs,
+) -> Result<Bytes, CallInputReadError> {
+    inputs.input.try_bytes(context)
+}
+
+#[inline]
 pub(crate) fn input_bytes<CTX: ContextTr>(context: &mut CTX, inputs: &CallInputs) -> Bytes {
-    inputs.input.bytes(context)
+    try_input_bytes(context, inputs).unwrap_or_default()
 }
 
 /// Contains some contextual infos for a transaction execution that is made available to the JS
