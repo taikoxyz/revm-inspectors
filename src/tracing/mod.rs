@@ -627,7 +627,7 @@ where
             .exclude_precompile_calls
             .then(|| self.is_precompile_call(context, &to, &value));
 
-        let input = inputs.input.bytes(context);
+        let input = input_bytes(context, inputs);
         self.start_trace_on_call(
             context,
             to,
@@ -676,6 +676,11 @@ where
         node.trace.selfdestruct_refund_target = Some(target);
         node.trace.selfdestruct_transferred_value = Some(value);
     }
+}
+
+#[inline]
+pub(crate) fn input_bytes<CTX: ContextTr>(context: &mut CTX, inputs: &CallInputs) -> Bytes {
+    inputs.input.bytes(context)
 }
 
 /// Contains some contextual infos for a transaction execution that is made available to the JS

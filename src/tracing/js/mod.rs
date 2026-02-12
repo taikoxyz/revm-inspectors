@@ -1,6 +1,7 @@
 //! Javascript inspector
 
 use crate::tracing::{
+    input_bytes,
     config::TraceStyle,
     js::{
         bindings::{
@@ -528,7 +529,7 @@ where
         let value = inputs.transfer_value().unwrap_or_default();
         self.push_call(
             contract,
-            inputs.input.bytes(context),
+            input_bytes(context, inputs),
             value,
             inputs.scheme.into(),
             caller,

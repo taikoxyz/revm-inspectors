@@ -45,11 +45,9 @@ impl FourByteInspector {
 
 impl<CTX: ContextTr> Inspector<CTX> for FourByteInspector {
     fn call(&mut self, context: &mut CTX, inputs: &mut CallInputs) -> Option<CallOutcome> {
-        let Ok((Some(selector_prefix), _)) = inputs.input.try_selector_prefixes(context) else {
+        let Some((selector, calldata_size)) = selector_and_calldata_size(context, inputs) else {
             return None;
         };
-        let selector = Selector::from(selector_prefix);
-        let calldata_size = inputs.input.len().saturating_sub(4);
         *self.inner.entry((selector, calldata_size)).or_default() += 1;
 
         None
@@ -75,4 +73,15 @@ impl From<&FourByteInspector> for FourByteFrame {
                 .collect(),
         )
     }
+}
+
+#[inline]
+fn selector_and_calldata_size<CTX: ContextTr>(
+    context: &mut CTX,
+    inputs: &CallInputs,
+) -> Option<(Selector, usize)> {
+    let Ok((Some(selector_prefix), _)) = inputs.input.try_selector_prefixes(context) else {
+        return None;
+    };
+    Some((Selector::from(selector_prefix), inputs.input.len().saturating_sub(4)))
 }
