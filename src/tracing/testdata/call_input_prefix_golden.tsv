@@ -1,0 +1,6 @@
+case_id	input_hex	expected_selector	expected_inner
+empty	0x	none	none
+short_three_bytes	0xaabbcc	none	none
+selector_only	0x10203040	0x10203040	none
+selector_and_inner	0x1020304050607080	0x10203040	0x50607080
+long_payload	0xdeadbeef0102030405060708	0xdeadbeef	0x01020304

@@ -1,8 +1,8 @@
 //! Javascript inspector
 
 use crate::tracing::{
-    input_bytes,
     config::TraceStyle,
+    integration::input_bytes,
     js::{
         bindings::{
             CallFrame, Contract, EvmDbRef, FrameResult, JsEvmContext, MemoryRef, StackRef, StepLog,

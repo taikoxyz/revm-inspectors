@@ -18,8 +18,7 @@ use revm::{
     inspector::JournalExt,
     interpreter::{
         interpreter_types::{Immediates, Jumps, LoopControl, ReturnData, RuntimeFlag},
-        CallInputReadError, CallInputs, CallOutcome, CallScheme, CreateInputs, CreateOutcome,
-        Interpreter,
+        CallInputs, CallOutcome, CallScheme, CreateInputs, CreateOutcome, Interpreter,
         InterpreterResult,
     },
     primitives::{hardfork::SpecId, Address, Bytes, Log, B256, U256},
@@ -48,6 +47,8 @@ pub mod types;
 use types::{CallLog, CallTrace, CallTraceStep};
 
 mod utils;
+/// Integration helpers that keep Gwyneth-specific tracing kernels out of core owners.
+pub mod integration;
 
 #[cfg(feature = "std")]
 mod writer;
@@ -59,12 +60,6 @@ pub mod js;
 
 mod mux;
 pub use mux::{Error as MuxError, MuxInspector};
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum TraceRecoverableError {
-    /// Call input could not be materialized from shared memory.
-    CallInputRead(CallInputReadError),
-}
 
 /// An inspector that collects call traces.
 ///
@@ -96,8 +91,6 @@ pub struct TracingInspector {
     ///
     /// All `Vec<CallTraceStep>` are always empty but may have capacity.
     reusable_step_vecs: Vec<Vec<CallTraceStep>>,
-    /// Recoverable tracing issues captured while preserving runtime behavior.
-    recoverable_errors: Vec<TraceRecoverableError>,
 }
 
 impl TracingInspector {
@@ -122,7 +115,6 @@ impl TracingInspector {
             // kept
             config,
             reusable_step_vecs,
-            recoverable_errors,
         } = self;
 
         // if we record steps we can reuse the individual calltracestep vecs
@@ -142,7 +134,6 @@ impl TracingInspector {
         spec_id.take();
         *last_journal_len = 0;
         *record_step_end = false;
-        recoverable_errors.clear();
     }
 
     /// Resets the inspector to it's initial state of [Self::new].
@@ -161,15 +152,10 @@ impl TracingInspector {
     pub fn config_mut(&mut self) -> &mut TracingInspectorConfig {
         &mut self.config
     }
-    /// Returns recoverable tracing errors captured while preserving behavior.
-    pub fn recoverable_errors(&self) -> &[TraceRecoverableError] {
-        &self.recoverable_errors
-    }
 
-    fn record_recoverable_error(&mut self, error: TraceRecoverableError) {
-        self.recoverable_errors.push(error);
+    fn record_stack_invariant_violation(&mut self, context: &'static str) {
+        let _ = integration::TraceRecoverableError::TraceStackInvariant(context);
     }
-
 
     /// Updates the config of the inspector.
     pub fn update_config(
@@ -315,15 +301,15 @@ impl TracingInspector {
     /// If no [CallTrace] was pushed
     #[track_caller]
     #[inline]
-    fn last_trace_idx(&self) -> usize {
-        self.trace_stack.last().copied().expect("can't start step without starting a trace first")
+    fn last_trace_idx(&self) -> Option<usize> {
+        self.trace_stack.last().copied()
     }
 
     /// Returns a mutable reference to the last trace [CallTrace] from the stack.
     #[track_caller]
-    fn last_trace(&mut self) -> &mut CallTraceNode {
-        let idx = self.last_trace_idx();
-        &mut self.traces.arena[idx]
+    fn last_trace(&mut self) -> Option<&mut CallTraceNode> {
+        let idx = self.last_trace_idx()?;
+        self.traces.arena.get_mut(idx)
     }
 
     /// _Removes_ the last trace [CallTrace] index from the stack.
@@ -333,8 +319,8 @@ impl TracingInspector {
     /// If no [CallTrace] was pushed
     #[track_caller]
     #[inline]
-    fn pop_trace_idx(&mut self) -> usize {
-        self.trace_stack.pop().expect("more traces were filled than started")
+    fn pop_trace_idx(&mut self) -> Option<usize> {
+        self.trace_stack.pop()
     }
 
     /// Starts tracking a new trace.
@@ -397,8 +383,14 @@ impl TracingInspector {
     ) {
         let InterpreterResult { result, ref output, ref gas } = *result;
 
-        let trace_idx = self.pop_trace_idx();
-        let trace = &mut self.traces.arena[trace_idx].trace;
+        let Some(trace_idx) = self.pop_trace_idx() else {
+            self.record_stack_invariant_violation("call_end_without_active_trace");
+            return;
+        };
+        let Some(trace) = self.traces.arena.get_mut(trace_idx).map(|node| &mut node.trace) else {
+            self.record_stack_invariant_violation("call_end_trace_index_out_of_bounds");
+            return;
+        };
 
         trace.gas_used = gas.spent();
 
@@ -438,8 +430,14 @@ impl TracingInspector {
             return;
         }
 
-        let trace_idx = self.last_trace_idx();
-        let node = &mut self.traces.arena[trace_idx];
+        let Some(trace_idx) = self.last_trace_idx() else {
+            self.record_stack_invariant_violation("start_step_without_active_trace");
+            return;
+        };
+        let Some(node) = self.traces.arena.get_mut(trace_idx) else {
+            self.record_stack_invariant_violation("start_step_trace_index_out_of_bounds");
+            return;
+        };
 
         // Reuse the memory from the previous step if:
         // - there is not opcode filter -- in this case we cannot rely on the order of steps
@@ -528,9 +526,18 @@ impl TracingInspector {
             return;
         }
 
-        let trace_idx = self.last_trace_idx();
-        let node = &mut self.traces.arena[trace_idx];
-        let step = node.trace.steps.last_mut().unwrap();
+        let Some(trace_idx) = self.last_trace_idx() else {
+            self.record_stack_invariant_violation("step_end_without_active_trace");
+            return;
+        };
+        let Some(node) = self.traces.arena.get_mut(trace_idx) else {
+            self.record_stack_invariant_violation("step_end_trace_index_out_of_bounds");
+            return;
+        };
+        let Some(step) = node.trace.steps.last_mut() else {
+            self.record_stack_invariant_violation("step_end_without_step_start");
+            return;
+        };
 
         // See comments in `start_step`.
         debug_assert!(
@@ -611,7 +618,10 @@ where
         if self.config.record_logs {
             // index starts at 0
             let log_count = self.log_count();
-            let trace = self.last_trace();
+            let Some(trace) = self.last_trace() else {
+                self.record_stack_invariant_violation("log_without_active_trace");
+                return;
+            };
             trace.ordering.push(TraceMemberOrder::Log(trace.logs.len()));
             trace.logs.push(
                 CallLog::from(log)
@@ -647,13 +657,7 @@ where
             .exclude_precompile_calls
             .then(|| self.is_precompile_call(context, &to, &value));
 
-        let input = match try_input_bytes(context, inputs) {
-            Ok(input) => input,
-            Err(err) => {
-                self.record_recoverable_error(TraceRecoverableError::CallInputRead(err));
-                Bytes::new()
-            }
-        };
+        let input = inputs.input.bytes(context);
         self.start_trace_on_call(
             context,
             to,
@@ -697,24 +701,14 @@ where
     }
 
     fn selfdestruct(&mut self, contract: Address, target: Address, value: U256) {
-        let node = self.last_trace();
+        let Some(node) = self.last_trace() else {
+            self.record_stack_invariant_violation("selfdestruct_without_active_trace");
+            return;
+        };
         node.trace.selfdestruct_address = Some(contract);
         node.trace.selfdestruct_refund_target = Some(target);
         node.trace.selfdestruct_transferred_value = Some(value);
     }
-}
-
-#[inline]
-pub(crate) fn try_input_bytes<CTX: ContextTr>(
-    context: &mut CTX,
-    inputs: &CallInputs,
-) -> Result<Bytes, CallInputReadError> {
-    inputs.input.try_bytes(context)
-}
-
-#[inline]
-pub(crate) fn input_bytes<CTX: ContextTr>(context: &mut CTX, inputs: &CallInputs) -> Bytes {
-    try_input_bytes(context, inputs).unwrap_or_default()
 }
 
 /// Contains some contextual infos for a transaction execution that is made available to the JS
