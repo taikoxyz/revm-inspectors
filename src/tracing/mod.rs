@@ -77,8 +77,8 @@ pub struct TracingInspector {
     traces: CallTraceArena,
     /// Tracks active calls
     trace_stack: Vec<usize>,
-    /// Tracks whether the next `step_end` should be recorded. Set in `start_step`.
-    record_step_end: bool,
+    /// Tracks active steps.
+    step_stack: Vec<StackStep>,
     /// Tracks the return value of the last call
     last_call_return_data: Option<Bytes>,
     /// Tracks the journal len in the step, used in step_end to check if the journal has changed
@@ -108,10 +108,10 @@ impl TracingInspector {
         let Self {
             traces,
             trace_stack,
+            step_stack,
             last_call_return_data,
             last_journal_len,
             spec_id,
-            record_step_end,
             // kept
             config,
             reusable_step_vecs,
@@ -130,10 +130,10 @@ impl TracingInspector {
 
         traces.clear();
         trace_stack.clear();
+        step_stack.clear();
         last_call_return_data.take();
         spec_id.take();
         *last_journal_len = 0;
-        *record_step_end = false;
     }
 
     /// Resets the inspector to it's initial state of [Self::new].
@@ -329,7 +329,7 @@ impl TracingInspector {
     #[allow(clippy::too_many_arguments)]
     fn start_trace_on_call<CTX: ContextTr>(
         &mut self,
-        _context: &mut CTX,
+        context: &mut CTX,
         address: Address,
         input_data: Bytes,
         value: U256,
@@ -354,7 +354,7 @@ impl TracingInspector {
             0,
             push_kind,
             CallTrace {
-                depth: self.trace_stack.len(),
+                depth: context.journal().depth(),
                 address,
                 kind,
                 data: input_data,
@@ -425,26 +425,30 @@ impl TracingInspector {
         let op = unsafe { OpCode::new_unchecked(interp.bytecode.opcode()) };
 
         let record = self.config.should_record_opcode(op);
-        self.record_step_end = record;
+        let Some(trace_idx) = self.last_trace_idx() else {
+            self.record_stack_invariant_violation("start_step_without_active_trace");
+            self.step_stack.push(StackStep { record: false, trace_idx: 0, step_idx: 0 });
+            return;
+        };
+        let Some(trace) = self.traces.arena.get_mut(trace_idx) else {
+            self.record_stack_invariant_violation("start_step_trace_index_out_of_bounds");
+            self.step_stack.push(StackStep { record: false, trace_idx: 0, step_idx: 0 });
+            return;
+        };
+
+        let step_idx = trace.trace.steps.len();
+        self.step_stack.push(StackStep { trace_idx, step_idx, record });
+
         if !record {
             return;
         }
-
-        let Some(trace_idx) = self.last_trace_idx() else {
-            self.record_stack_invariant_violation("start_step_without_active_trace");
-            return;
-        };
-        let Some(node) = self.traces.arena.get_mut(trace_idx) else {
-            self.record_stack_invariant_violation("start_step_trace_index_out_of_bounds");
-            return;
-        };
 
         // Reuse the memory from the previous step if:
         // - there is not opcode filter -- in this case we cannot rely on the order of steps
         // - it exists and has not modified memory
         let memory = self.config.record_memory_snapshots.then(|| {
             if self.config.record_opcodes_filter.is_none() {
-                if let Some(prev) = node.trace.steps.last() {
+                if let Some(prev) = trace.trace.steps.last() {
                     if !prev.op.modifies_memory() {
                         if let Some(memory) = &prev.memory {
                             return memory.clone();
@@ -486,8 +490,7 @@ impl TracingInspector {
 
         self.last_journal_len = context.journal_ref().journal().len();
 
-        let step_idx = node.trace.steps.len();
-        node.trace.steps.push(CallTraceStep {
+        trace.trace.steps.push(CallTraceStep {
             pc: interp.bytecode.pc(),
             op,
             stack,
@@ -508,7 +511,7 @@ impl TracingInspector {
             decoded: None,
         });
 
-        node.ordering.push(TraceMemberOrder::Step(step_idx));
+        trace.ordering.push(TraceMemberOrder::Step(step_idx));
     }
 
     /// Fills the current trace with the output of a step.
@@ -520,34 +523,22 @@ impl TracingInspector {
         interp: &mut Interpreter,
         context: &mut CTX,
     ) {
-        // No need to reset here, since it is only read here and it will be overwritten by the next
-        // step.
-        if !self.record_step_end {
+        let Some(StackStep { trace_idx, step_idx, record }) = self.step_stack.pop() else {
+            self.record_stack_invariant_violation("step_end_without_step_start");
+            return;
+        };
+        if !record {
             return;
         }
 
-        let Some(trace_idx) = self.last_trace_idx() else {
-            self.record_stack_invariant_violation("step_end_without_active_trace");
-            return;
-        };
         let Some(node) = self.traces.arena.get_mut(trace_idx) else {
             self.record_stack_invariant_violation("step_end_trace_index_out_of_bounds");
             return;
         };
-        let Some(step) = node.trace.steps.last_mut() else {
-            self.record_stack_invariant_violation("step_end_without_step_start");
+        let Some(step) = node.trace.steps.get_mut(step_idx) else {
+            self.record_stack_invariant_violation("step_end_step_index_out_of_bounds");
             return;
         };
-
-        // See comments in `start_step`.
-        debug_assert!(
-            step.push_stack.is_none()
-                && step.gas_cost == 0
-                && step.storage_change.is_none()
-                && step.status.is_none()
-                && step.decoded.is_none(),
-            "step in step_end is already filled: {trace_idx} -> {step:#?}",
-        );
 
         if self.config.record_stack_snapshots.is_all()
             || self.config.record_stack_snapshots.is_pushes()
@@ -709,6 +700,23 @@ where
         node.trace.selfdestruct_refund_target = Some(target);
         node.trace.selfdestruct_transferred_value = Some(value);
     }
+}
+
+/// Struct keeping track of internal inspector steps stack.
+#[derive(Clone, Copy, Debug)]
+struct StackStep {
+    /// Whether this step should be recorded.
+    ///
+    /// This is set to `false` if [OpcodeFilter] is configured and this step's opcode is not
+    /// enabled for tracking.
+    record: bool,
+    /// Idx of the trace node this step belongs.
+    trace_idx: usize,
+    /// Idx of this step in the [CallTrace::steps].
+    ///
+    /// Please note that if `record` is `false`, this will still contain a value, but the step will
+    /// not appear in the steps list.
+    step_idx: usize,
 }
 
 /// Contains some contextual infos for a transaction execution that is made available to the JS
