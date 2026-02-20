@@ -50,6 +50,12 @@ mod utils;
 /// Integration helpers that keep Gwyneth-specific tracing kernels out of core owners.
 pub mod integration;
 
+macro_rules! require_some_or_record {
+    ($this:expr, $opt:expr, $context:literal) => {
+        match $opt { Some(value) => value, None => { $this.record_stack_invariant_violation($context); return; } }
+    };
+}
+
 #[cfg(feature = "std")]
 mod writer;
 #[cfg(feature = "std")]
@@ -383,14 +389,9 @@ impl TracingInspector {
     ) {
         let InterpreterResult { result, ref output, ref gas } = *result;
 
-        let Some(trace_idx) = self.pop_trace_idx() else {
-            self.record_stack_invariant_violation("call_end_without_active_trace");
-            return;
-        };
-        let Some(trace) = self.traces.arena.get_mut(trace_idx).map(|node| &mut node.trace) else {
-            self.record_stack_invariant_violation("call_end_trace_index_out_of_bounds");
-            return;
-        };
+        let trace_idx = require_some_or_record!(self, self.pop_trace_idx(), "call_end_without_active_trace");
+        let node = require_some_or_record!(self, self.traces.arena.get_mut(trace_idx), "call_end_trace_index_out_of_bounds");
+        let trace = &mut node.trace;
 
         trace.gas_used = gas.spent();
 
@@ -523,22 +524,14 @@ impl TracingInspector {
         interp: &mut Interpreter,
         context: &mut CTX,
     ) {
-        let Some(StackStep { trace_idx, step_idx, record }) = self.step_stack.pop() else {
-            self.record_stack_invariant_violation("step_end_without_step_start");
-            return;
-        };
+        let StackStep { trace_idx, step_idx, record } =
+            require_some_or_record!(self, self.step_stack.pop(), "step_end_without_step_start");
         if !record {
             return;
         }
 
-        let Some(node) = self.traces.arena.get_mut(trace_idx) else {
-            self.record_stack_invariant_violation("step_end_trace_index_out_of_bounds");
-            return;
-        };
-        let Some(step) = node.trace.steps.get_mut(step_idx) else {
-            self.record_stack_invariant_violation("step_end_step_index_out_of_bounds");
-            return;
-        };
+        let node = require_some_or_record!(self, self.traces.arena.get_mut(trace_idx), "step_end_trace_index_out_of_bounds");
+        let step = require_some_or_record!(self, node.trace.steps.get_mut(step_idx), "step_end_step_index_out_of_bounds");
 
         if self.config.record_stack_snapshots.is_all()
             || self.config.record_stack_snapshots.is_pushes()
@@ -609,10 +602,7 @@ where
         if self.config.record_logs {
             // index starts at 0
             let log_count = self.log_count();
-            let Some(trace) = self.last_trace() else {
-                self.record_stack_invariant_violation("log_without_active_trace");
-                return;
-            };
+            let trace = require_some_or_record!(self, self.last_trace(), "log_without_active_trace");
             trace.ordering.push(TraceMemberOrder::Log(trace.logs.len()));
             trace.logs.push(
                 CallLog::from(log)
@@ -692,10 +682,8 @@ where
     }
 
     fn selfdestruct(&mut self, contract: Address, target: Address, value: U256) {
-        let Some(node) = self.last_trace() else {
-            self.record_stack_invariant_violation("selfdestruct_without_active_trace");
-            return;
-        };
+        let node =
+            require_some_or_record!(self, self.last_trace(), "selfdestruct_without_active_trace");
         node.trace.selfdestruct_address = Some(contract);
         node.trace.selfdestruct_refund_target = Some(target);
         node.trace.selfdestruct_transferred_value = Some(value);
